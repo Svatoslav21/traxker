@@ -1,0 +1,55 @@
+workflows:
+  ios_appstore_manual_signing:
+    name: iOS • App Store • Manual signing
+    max_build_duration: 60
+    environment:
+      vars:
+        XCODE_PROJECT: "Trackify.xcodeproj"      # если появится Pods/.xcworkspace — скажи, поменяю
+        XCODE_SCHEME: "Trackify"
+        BUNDLE_ID: "dev.annebunas.trackifyrrrr"  # проверь точное значение
+        TEAM_ID: "3S4N4WVT3G"                  # замени на свой Team ID из Apple Developer
+        EXPORT_METHOD: "app-store"
+    scripts:
+      - name: Импорт сертификата и профиля
+        script: |
+          echo "$CERTIFICATE_P12" | base64 --decode > cert.p12
+          echo "$MOBILEPROVISION" | base64 --decode > profile.mobileprovision
+          keychain initialize
+          keychain import cert.p12 -P "$CERTIFICATE_PASSWORD" -A
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print UUID' /dev/stdin <<< $(security cms -D -i profile.mobileprovision))
+          cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/$PROFILE_UUID.mobileprovision
+          echo "Using Provisioning Profile UUID: $PROFILE_UUID"
+          cat > exportOptions.plist <<EOI
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>${EXPORT_METHOD}</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>${BUNDLE_ID}</key><string>${PROFILE_UUID}</string>
+            </dict>
+            <key>compileBitcode</key><false/>
+            <key>stripSwiftSymbols</key><true/>
+            <key>destination</key><string>export</string>
+          </dict>
+          </plist>
+          EOI
+      - name: Сборка .ipa (Xcode project)
+        script: |
+          xcode-project build-ipa \
+            --project "$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME" \
+            --export-options-plist "exportOptions.plist"
+    artifacts:
+      - $CM_EXPORT_DIR/*.ipa
+      - $CM_EXPORT_DIR/*.dSYM.zip
+      - $CM_EXPORT_DIR/*.xcarchive
+    publishing:
+      app_store_connect:
+        api_key: $APP_STORE_CONNECT_PRIVATE_KEY
+        key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
+        issuer_id: $APP_STORE_CONNECT_ISSUER_ID
+        submit_to_testflight: true
