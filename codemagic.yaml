@@ -18,7 +18,6 @@ workflows:
       - name: Import certificate and profile
         script: |
           set -euo pipefail
-
           echo "$CERTIFICATE_P12" | base64 --decode > cert.p12
           echo "$MOBILEPROVISION" | base64 --decode > profile.mobileprovision
 
@@ -44,7 +43,7 @@ workflows:
           echo "PROFILE_UUID=$PROFILE_UUID" >> "$CM_ENV"
           echo "TEAM_ID=$PROFILE_TEAM_ID"   >> "$CM_ENV"
 
-          # Diagnostics (не ломают билд)
+          # Diagnostics
           echo "== Code signing identities in keychain =="
           security find-identity -v -p codesigning || true
 
@@ -71,6 +70,40 @@ workflows:
 
           # Apply profile into the project for manual signing
           xcode-project use-profiles --project "$XCODE_PROJECT" --export-options-plist exportOptions.plist
+
+      - name: Bump build (and optional marketing version)
+        script: |
+          set -euo pipefail
+
+          if [ -n "${XCODE_WORKSPACE:-}" ]; then PROJ_ARGS=(-workspace "$XCODE_WORKSPACE")
+          else PROJ_ARGS=(-project "${XCODE_PROJECT:?Set XCODE_PROJECT or XCODE_WORKSPACE}"); fi
+          : "${XCODE_SCHEME:?Set XCODE_SCHEME}"
+
+          SETTINGS=$(xcodebuild "${PROJ_ARGS[@]}" -scheme "$XCODE_SCHEME" -showBuildSettings)
+          SRCROOT=$(echo "$SETTINGS" | awk -F' = ' '/^ *SRCROOT /{print $2; exit}')
+          INFOPLIST_FILE=$(echo "$SETTINGS" | awk -F' = ' '/^ *INFOPLIST_FILE /{print $2; exit}')
+
+          case "$INFOPLIST_FILE" in
+            /*) PLIST="$INFOPLIST_FILE" ;;
+            \$\(SRCROOT\)*) PLIST="${INFOPLIST_FILE/\$(SRCROOT)/$SRCROOT}" ;;
+            *) PLIST="$SRCROOT/$INFOPLIST_FILE" ;;
+          esac
+          echo "Info.plist: $PLIST"
+          [ -f "$PLIST" ] || { echo "❌ Info.plist not found: $PLIST"; exit 1; }
+
+          if [ -n "${APP_VERSION:-}" ]; then
+            /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$PLIST" \
+              || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $APP_VERSION" "$PLIST"
+          fi
+
+          BUILD_NUM=$(date +%y%j%H%M%S)
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUM" "$PLIST" \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $BUILD_NUM" "$PLIST"
+
+          /usr/bin/plutil -lint "$PLIST"
+          echo "== Final versions =="
+          echo "Version  = $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST" 2>/dev/null || echo '(unchanged)')"
+          echo "Build    = $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")"
 
       - name: Archive and export IPA (xcodebuild)
         script: |
@@ -100,8 +133,6 @@ workflows:
 
           echo "Export dir listing:"
           ls -lah "$EXPORT_PATH" || true
-
-          # Упадём явно, если .ipa не создана (чтобы не было 'No artifacts were found')
           test -e "$EXPORT_PATH"/*.ipa
 
     artifacts:
@@ -115,5 +146,3 @@ workflows:
         key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
         issuer_id: $APP_STORE_CONNECT_ISSUER_ID
         submit_to_testflight: true
-
-       
