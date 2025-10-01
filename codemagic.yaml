@@ -115,3 +115,32 @@ workflows:
         key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
         issuer_id: $APP_STORE_CONNECT_ISSUER_ID
         submit_to_testflight: true
+
+              - name: Bump build number (and optional app version)
+        script: |
+          set -euo pipefail
+
+          # Путь к фактическому Info.plist таргета
+          PLIST_PATH=$(xcodebuild -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -showBuildSettings \
+                        | awk -F' = ' '/INFOPLIST_FILE/ {print $2; exit}')
+          [[ "$PLIST_PATH" != /* ]] && PLIST_PATH="$PWD/$PLIST_PATH"
+          echo "Info.plist: $PLIST_PATH"
+
+          # (опц.) Маркетинговая версия
+          if [ -n "${APP_VERSION:-}" ]; then
+            /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$PLIST_PATH"
+          fi
+
+          # Build: либо задан, либо генерируем гарантированно уникальный
+          if [ -n "${APP_BUILD:-}" ]; then
+            BUILD_NUM="$APP_BUILD"
+          else
+            BUILD_NUM=$(date +%y%j%H%M)  # YYDDDHHMM, только цифры и всегда новое
+          fi
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUM" "$PLIST_PATH"
+
+          # Вывести итоговые значения (диагностика)
+          echo "== Final versions =="
+          echo "CFBundleShortVersionString=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST_PATH" 2>/dev/null || echo '(unchanged)')"
+          echo "CFBundleVersion=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST_PATH")"
+
