@@ -116,31 +116,80 @@ workflows:
         issuer_id: $APP_STORE_CONNECT_ISSUER_ID
         submit_to_testflight: true
 
-              - name: Bump build number (and optional app version)
-        script: |
-          set -euo pipefail
+          - name: Bump build number (and optional app version)
+  script: |
+    set -euo pipefail
 
-          # Путь к фактическому Info.plist таргета
-          PLIST_PATH=$(xcodebuild -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -showBuildSettings \
-                        | awk -F' = ' '/INFOPLIST_FILE/ {print $2; exit}')
-          [[ "$PLIST_PATH" != /* ]] && PLIST_PATH="$PWD/$PLIST_PATH"
-          echo "Info.plist: $PLIST_PATH"
+    # 1) Определяем проект/воркспейс
+    if [ -n "${XCODE_WORKSPACE:-}" ]; then
+      PROJ_ARGS=(-workspace "$XCODE_WORKSPACE")
+    elif [ -n "${XCODE_PROJECT:-}" ]; then
+      PROJ_ARGS=(-project "$XCODE_PROJECT")
+    elif compgen -G "*.xcworkspace" >/dev/null; then
+      ws=$(ls -1 *.xcworkspace | head -n1)
+      PROJ_ARGS=(-workspace "$ws")
+    else
+      pr=$(ls -1 *.xcodeproj | head -n1)
+      PROJ_ARGS=(-project "$pr")
+    fi
 
-          # (опц.) Маркетинговая версия
-          if [ -n "${APP_VERSION:-}" ]; then
-            /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$PLIST_PATH"
-          fi
+    # 2) Определяем схему (если не задана)
+    if [ -z "${XCODE_SCHEME:-}" ]; then
+      # Попробуем вытащить первую схему из xcodebuild -list -json
+      schemes=$(xcodebuild "${PROJ_ARGS[@]}" -list -json 2>/dev/null \
+        | /usr/bin/python3 - <<'PY'
+import sys, json
+try:
+    d=json.load(sys.stdin)
+    p=d.get("workspace", d.get("project", {}))
+    print("\n".join(p.get("schemes", [])))
+except Exception:
+    pass
+PY
+      )
+      XCODE_SCHEME=$(echo "$schemes" | head -n1 || true)
+    fi
 
-          # Build: либо задан, либо генерируем гарантированно уникальный
-          if [ -n "${APP_BUILD:-}" ]; then
-            BUILD_NUM="$APP_BUILD"
-          else
-            BUILD_NUM=$(date +%y%j%H%M)  # YYDDDHHMM, только цифры и всегда новое
-          fi
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUM" "$PLIST_PATH"
+    if [ -z "${XCODE_SCHEME:-}" ]; then
+      echo "❌ Не удалось определить XCODE_SCHEME. Укажи его в env или в codemagic.yaml."
+      exit 1
+    fi
 
-          # Вывести итоговые значения (диагностика)
-          echo "== Final versions =="
-          echo "CFBundleShortVersionString=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST_PATH" 2>/dev/null || echo '(unchanged)')"
-          echo "CFBundleVersion=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST_PATH")"
+    # 3) Получаем значения из build settings
+    SETTINGS=$(xcodebuild "${PROJ_ARGS[@]}" -scheme "$XCODE_SCHEME" -showBuildSettings)
+    SRCROOT=$(echo "$SETTINGS" | awk -F' = ' '/^ *SRCROOT / {print $2; exit}')
+    INFOPLIST_FILE=$(echo "$SETTINGS" | awk -F' = ' '/^ *INFOPLIST_FILE / {print $2; exit}')
 
+    # 4) Разворачиваем путь к Info.plist
+    case "$INFOPLIST_FILE" in
+      /*) PLIST_PATH="$INFOPLIST_FILE" ;;
+      \$\(SRCROOT\)*)
+        PLIST_PATH="${INFOPLIST_FILE/\$(SRCROOT)/$SRCROOT}"
+        ;;
+      *)
+        PLIST_PATH="$SRCROOT/$INFOPLIST_FILE"
+        ;;
+    esac
+    echo "Info.plist: $PLIST_PATH"
+    [ -f "$PLIST_PATH" ] || { echo "❌ Info.plist не найден по пути: $PLIST_PATH"; exit 1; }
+
+    # 5) (опц.) маркетинговая версия
+    if [ -n "${APP_VERSION:-}" ]; then
+      /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$PLIST_PATH" || \
+      /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $APP_VERSION" "$PLIST_PATH"
+    fi
+
+    # 6) Уникальный build number (или берём из APP_BUILD)
+    if [ -n "${APP_BUILD:-}" ]; then
+      BUILD_NUM="$APP_BUILD"
+    else
+      BUILD_NUM=$(date +%y%j%H%M%S)  # YY DDD HH MM SS — точно уникально поминутно/посекундно
+    fi
+    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUM" "$PLIST_PATH" || \
+    /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $BUILD_NUM" "$PLIST_PATH"
+
+    # 7) Валидация и вывод
+    /usr/bin/plutil -lint "$PLIST_PATH"
+    echo "== Final versions =="
+    echo "CFBundleShortVersionString=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST_PATH" 2>/dev/null || echo '(unchanged)')"
+    echo "CFBundleVersion=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST_PATH")"
