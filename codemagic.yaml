@@ -2,28 +2,38 @@ workflows:
   ios_appstore_manual_signing:
     name: iOS • App Store • Manual signing
     max_build_duration: 60
+
     environment:
       groups:
-        - signing
-        - appstore_connect
+        - signing            # CERTIFICATE_P12, CERTIFICATE_PASSWORD, MOBILEPROVISION
+        - appstore_connect   # APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY_IDENTIFIER, APP_STORE_CONNECT_PRIVATE_KEY
       vars:
-        XCODE_PROJECT: "Trackify.xcodeproj"
+        XCODE_PROJECT: "Trackify.xcodeproj"   # если появится Pods/.xcworkspace — скажи, поменяю на workspace
         XCODE_SCHEME: "Trackify"
         BUNDLE_ID: "dev.annebunas.trackifyrrrr"
         TEAM_ID: "3S4N4WVT3G"
         EXPORT_METHOD: "app-store"
+
     scripts:
       - name: Импорт сертификата и профиля
         script: |
           echo "$CERTIFICATE_P12" | base64 --decode > cert.p12
           echo "$MOBILEPROVISION" | base64 --decode > profile.mobileprovision
+
+          # Keychain + сертификат
           keychain initialize
           keychain import cert.p12 -P "$CERTIFICATE_PASSWORD" -A
+
+          # Установка provisioning profile
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print UUID' /dev/stdin <<< $(security cms -D -i profile.mobileprovision))
           cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/$PROFILE_UUID.mobileprovision
           echo "Using Provisioning Profile UUID: $PROFILE_UUID"
+
+          # Генерация корректного exportOptions.plist (валидный XML)
+          rm -f exportOptions.plist
           cat > exportOptions.plist <<EOI
+          <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
@@ -40,16 +50,22 @@ workflows:
           </dict>
           </plist>
           EOI
+
+          # Проверим валидность plist (если не валиден — команда вернёт ошибку)
+          /usr/bin/plutil -lint exportOptions.plist
+
       - name: Сборка .ipa (Xcode project)
         script: |
           xcode-project build-ipa \
             --project "$XCODE_PROJECT" \
             --scheme "$XCODE_SCHEME" \
             --export-options-plist "exportOptions.plist"
+
     artifacts:
       - $CM_EXPORT_DIR/*.ipa
       - $CM_EXPORT_DIR/*.dSYM.zip
       - $CM_EXPORT_DIR/*.xcarchive
+
     publishing:
       app_store_connect:
         api_key: $APP_STORE_CONNECT_PRIVATE_KEY
