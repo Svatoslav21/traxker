@@ -8,7 +8,7 @@ workflows:
         - signing            # CERTIFICATE_P12, CERTIFICATE_PASSWORD, MOBILEPROVISION
         - appstore_connect   # APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY_IDENTIFIER, APP_STORE_CONNECT_PRIVATE_KEY
       vars:
-        XCODE_PROJECT: "Trackify.xcodeproj"
+        XCODE_PROJECT: "Trackify.xcodeproj"   # если появится Pods/.xcworkspace — скажу, поменяем на workspace
         XCODE_SCHEME: "Trackify"
         BUNDLE_ID: "dev.annebunas.trackifyrrrr"
         TEAM_ID: "3S4N4WVT3G"
@@ -20,9 +20,14 @@ workflows:
           echo "$CERTIFICATE_P12" | base64 --decode > cert.p12
           echo "$MOBILEPROVISION" | base64 --decode > profile.mobileprovision
 
-          # Keychain + сертификат
+          # Keychain + сертификат (правильная команда Codemagic CLI)
           keychain initialize
-          keychain import cert.p12 -P "$CERTIFICATE_PASSWORD" -A
+          # если пароль есть — передадим, если пустой — флаг не добавляем
+          if [ -n "$CERTIFICATE_PASSWORD" ]; then
+            keychain add-certificates --certificate cert.p12 --certificate-password "$CERTIFICATE_PASSWORD"
+          else
+            keychain add-certificates --certificate cert.p12
+          fi
 
           # Установка provisioning profile и извлечение UUID
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
@@ -33,7 +38,7 @@ workflows:
           # Сохраняем UUID для следующих шагов
           echo "PROFILE_UUID=$PROFILE_UUID" >> $CM_ENV
 
-          # Генерация корректного exportOptions.plist
+          # Корректный exportOptions.plist (валидный XML)
           cat > exportOptions.plist <<EOI
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -54,15 +59,14 @@ workflows:
           EOI
           /usr/bin/plutil -lint exportOptions.plist
 
-          # Прописываем профиль в проект на время CI
+          # Прописываем профиль в проект на время CI (без --scheme, так корректно)
           xcode-project use-profiles \
             --project "$XCODE_PROJECT" \
-            --scheme "$XCODE_SCHEME" \
             --export-options-plist "exportOptions.plist"
 
       - name: Сборка .ipa (Xcode project)
         script: |
-          # Доверимся настройкам, внесённым use-profiles (без ломких флагов)
+          # Схема должна быть Shared в репозитории (Product > Scheme > Manage Schemes…)
           xcode-project build-ipa \
             --project "$XCODE_PROJECT" \
             --scheme "$XCODE_SCHEME" \
