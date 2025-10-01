@@ -8,7 +8,7 @@ workflows:
         - signing            # CERTIFICATE_P12, CERTIFICATE_PASSWORD, MOBILEPROVISION
         - appstore_connect   # APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY_IDENTIFIER, APP_STORE_CONNECT_PRIVATE_KEY
       vars:
-        XCODE_PROJECT: "Trackify.xcodeproj"   # если появится Pods/.xcworkspace — скажи, поменяю на workspace
+        XCODE_PROJECT: "Trackify.xcodeproj"
         XCODE_SCHEME: "Trackify"
         BUNDLE_ID: "dev.annebunas.trackifyrrrr"
         TEAM_ID: "3S4N4WVT3G"
@@ -30,7 +30,7 @@ workflows:
           cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/$PROFILE_UUID.mobileprovision
           echo "Using Provisioning Profile UUID: $PROFILE_UUID"
 
-          # Генерация корректного exportOptions.plist (валидный XML)
+          # Генерация корректного exportOptions.plist
           rm -f exportOptions.plist
           cat > exportOptions.plist <<EOI
           <?xml version="1.0" encoding="UTF-8"?>
@@ -50,15 +50,18 @@ workflows:
           </dict>
           </plist>
           EOI
-
-          # Проверим валидность plist (если не валиден — команда вернёт ошибку)
           /usr/bin/plutil -lint exportOptions.plist
+
+          # ВАЖНО: прописываем профиль в проект (manual signing)
+          xcode-project use-profiles --export-options-plist "exportOptions.plist"
 
       - name: Сборка .ipa (Xcode project)
         script: |
+          # Дополнительно передаём параметры подписания на всякий случай
           xcode-project build-ipa \
             --project "$XCODE_PROJECT" \
             --scheme "$XCODE_SCHEME" \
+            --archive-flags "DEVELOPMENT_TEAM=$TEAM_ID CODE_SIGN_STYLE=Manual PROVISIONING_PROFILE_SPECIFIER=$PROFILE_UUID CODE_SIGN_IDENTITY=Apple\ Distribution" \
             --export-options-plist "exportOptions.plist"
 
     artifacts:
