@@ -11,7 +11,7 @@ workflows:
         XCODE_PROJECT: "Trackify.xcodeproj"
         XCODE_SCHEME: "Trackify"
         BUNDLE_ID: "dev.annebunas.trackifyrrrr"
-        TEAM_ID: "3S4N4WVT3G"
+        TEAM_ID: "OVERRIDE_BY_PROFILE"   # будет заменён на значение из профиля
         EXPORT_METHOD: "app-store"
 
     scripts:
@@ -22,7 +22,7 @@ workflows:
           echo "$CERTIFICATE_P12" | base64 --decode > cert.p12
           echo "$MOBILEPROVISION" | base64 --decode > profile.mobileprovision
 
-          # Keychain + certificate (Codemagic CLI)
+          # Keychain + certificate
           keychain initialize
           if [ -n "${CERTIFICATE_PASSWORD:-}" ]; then
             keychain add-certificates --certificate cert.p12 --certificate-password "$CERTIFICATE_PASSWORD"
@@ -30,12 +30,23 @@ workflows:
             keychain add-certificates --certificate cert.p12
           fi
 
-          # Install provisioning profile and grab UUID
+          # Install provisioning profile and read UUID + TeamIdentifier
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print UUID' /dev/stdin <<< "$(security cms -D -i profile.mobileprovision)")
+          PROFILE_PLIST="$(security cms -D -i profile.mobileprovision)"
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print UUID' /dev/stdin <<< "$PROFILE_PLIST")
+          PROFILE_TEAM_ID=$(/usr/libexec/PlistBuddy -c 'Print TeamIdentifier:0' /dev/stdin <<< "$PROFILE_PLIST")
+
           cp profile.mobileprovision "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
           echo "Using Provisioning Profile UUID: $PROFILE_UUID"
+          echo "TeamIdentifier from profile: $PROFILE_TEAM_ID"
+
+          # export to env for next steps
           echo "PROFILE_UUID=$PROFILE_UUID" >> "$CM_ENV"
+          echo "TEAM_ID=$PROFILE_TEAM_ID"   >> "$CM_ENV"
+
+          # Diagnostics (не ломают билд)
+          echo "== Code signing identities in keychain =="
+          security find-identity -v -p codesigning || true
 
           # Valid exportOptions.plist (XML)
           cat > exportOptions.plist <<EOI
@@ -58,7 +69,7 @@ workflows:
           EOI
           /usr/bin/plutil -lint exportOptions.plist
 
-          # Apply profiles to the Xcode project for manual signing
+          # Apply profile into the project for manual signing
           xcode-project use-profiles --project "$XCODE_PROJECT" --export-options-plist exportOptions.plist
 
       - name: Archive and export IPA (xcodebuild)
@@ -90,7 +101,7 @@ workflows:
           echo "Export dir listing:"
           ls -lah "$EXPORT_PATH" || true
 
-          # Fail fast if ipa not created (to avoid 'No artifacts were found')
+          # Упадём явно, если .ipa не создана (чтобы не было 'No artifacts were found')
           test -e "$EXPORT_PATH"/*.ipa
 
     artifacts:
