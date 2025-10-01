@@ -1,6 +1,6 @@
 workflows:
   ios_appstore_manual_signing:
-    name: iOS • App Store • Manual signing
+    name: iOS App Store Manual signing
     max_build_duration: 60
 
     environment:
@@ -15,14 +15,14 @@ workflows:
         EXPORT_METHOD: "app-store"
 
     scripts:
-      - name: Импорт сертификата и профиля
+      - name: Import certificate and profile
         script: |
           set -euo pipefail
 
           echo "$CERTIFICATE_P12" | base64 --decode > cert.p12
           echo "$MOBILEPROVISION" | base64 --decode > profile.mobileprovision
 
-          # Keychain + сертификат
+          # Keychain + certificate (Codemagic CLI)
           keychain initialize
           if [ -n "${CERTIFICATE_PASSWORD:-}" ]; then
             keychain add-certificates --certificate cert.p12 --certificate-password "$CERTIFICATE_PASSWORD"
@@ -30,14 +30,14 @@ workflows:
             keychain add-certificates --certificate cert.p12
           fi
 
-          # Установка provisioning profile и UUID
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          # Install provisioning profile and grab UUID
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print UUID' /dev/stdin <<< "$(security cms -D -i profile.mobileprovision)")
-          cp profile.mobileprovision "~/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+          cp profile.mobileprovision "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
           echo "Using Provisioning Profile UUID: $PROFILE_UUID"
           echo "PROFILE_UUID=$PROFILE_UUID" >> "$CM_ENV"
 
-          # Валидный exportOptions.plist
+          # Valid exportOptions.plist (XML)
           cat > exportOptions.plist <<EOI
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -58,10 +58,10 @@ workflows:
           EOI
           /usr/bin/plutil -lint exportOptions.plist
 
-          # Прописываем профиль в проект на время CI
+          # Apply profiles to the Xcode project for manual signing
           xcode-project use-profiles --project "$XCODE_PROJECT" --export-options-plist exportOptions.plist
 
-      - name: Архив и экспорт .ipa (чистый xcodebuild)
+      - name: Archive and export IPA (xcodebuild)
         script: |
           set -euo pipefail
 
@@ -79,16 +79,18 @@ workflows:
             CODE_SIGN_STYLE=Manual \
             PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
             CODE_SIGN_IDENTITY="Apple Distribution" \
-            COMPILER_INDEX_STORE_ENABLE=NO | xcbeautify
+            COMPILER_INDEX_STORE_ENABLE=NO
 
           echo "Exporting IPA to: $EXPORT_PATH"
           xcodebuild -exportArchive \
             -archivePath "$ARCHIVE_PATH" \
             -exportOptionsPlist exportOptions.plist \
-            -exportPath "$EXPORT_PATH" | xcbeautify
+            -exportPath "$EXPORT_PATH"
 
           echo "Export dir listing:"
           ls -lah "$EXPORT_PATH" || true
+
+          # Fail fast if ipa not created (to avoid 'No artifacts were found')
           test -e "$EXPORT_PATH"/*.ipa
 
     artifacts:
@@ -101,4 +103,4 @@ workflows:
         api_key: $APP_STORE_CONNECT_PRIVATE_KEY
         key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
         issuer_id: $APP_STORE_CONNECT_ISSUER_ID
-        su
+        submit_to_testflight: true
