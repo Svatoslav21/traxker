@@ -18,6 +18,7 @@ workflows:
       - name: Import certificate and profile
         script: |
           set -euo pipefail
+
           echo "$CERTIFICATE_P12" | base64 --decode > cert.p12
           echo "$MOBILEPROVISION" | base64 --decode > profile.mobileprovision
 
@@ -43,7 +44,7 @@ workflows:
           echo "PROFILE_UUID=$PROFILE_UUID" >> "$CM_ENV"
           echo "TEAM_ID=$PROFILE_TEAM_ID"   >> "$CM_ENV"
 
-          # Diagnostics
+          # Diagnostics (не ломают билд)
           echo "== Code signing identities in keychain =="
           security find-identity -v -p codesigning || true
 
@@ -70,40 +71,114 @@ workflows:
 
           # Apply profile into the project for manual signing
           xcode-project use-profiles --project "$XCODE_PROJECT" --export-options-plist exportOptions.plist
-
-      - name: Bump build (and optional marketing version)
+          
+      - name: Bump build (and optional marketing version) — robust
         script: |
           set -euo pipefail
 
+          # === 0) Входные параметры проекта
           if [ -n "${XCODE_WORKSPACE:-}" ]; then PROJ_ARGS=(-workspace "$XCODE_WORKSPACE")
           else PROJ_ARGS=(-project "${XCODE_PROJECT:?Set XCODE_PROJECT or XCODE_WORKSPACE}"); fi
           : "${XCODE_SCHEME:?Set XCODE_SCHEME}"
+          : "${BUNDLE_ID:?Set BUNDLE_ID}"
 
-          SETTINGS=$(xcodebuild "${PROJ_ARGS[@]}" -scheme "$XCODE_SCHEME" -showBuildSettings)
-          SRCROOT=$(echo "$SETTINGS" | awk -F' = ' '/^ *SRCROOT /{print $2; exit}')
-          INFOPLIST_FILE=$(echo "$SETTINGS" | awk -F' = ' '/^ *INFOPLIST_FILE /{print $2; exit}')
+          # === 1) Собираем build settings в JSON
+          SETTINGS_JSON=$(xcodebuild "${PROJ_ARGS[@]}" -scheme "$XCODE_SCHEME" -configuration Release -showBuildSettings -json)
 
-          case "$INFOPLIST_FILE" in
-            /*) PLIST="$INFOPLIST_FILE" ;;
-            \$\(SRCROOT\)*) PLIST="${INFOPLIST_FILE/\$(SRCROOT)/$SRCROOT}" ;;
-            *) PLIST="$SRCROOT/$INFOPLIST_FILE" ;;
-          esac
-          echo "Info.plist: $PLIST"
-          [ -f "$PLIST" ] || { echo "❌ Info.plist not found: $PLIST"; exit 1; }
+          # === 2) Находим нужный Info.plist по PRODUCT_BUNDLE_IDENTIFIER == BUNDLE_ID
+          read -r SRCROOT PLIST_FROM_SETTINGS TARGET_NAME <<<"$(
+            /usr/bin/python3 - <<'PY'
+import sys,json,os,re
+data=json.load(sys.stdin)
+srcroot=plist=target=""
+items=data if isinstance(data,list) else [data]
+def resolve(srcroot, val):
+    if not val: return ""
+    if val.startswith("$(SRCROOT)"): return val.replace("$(SRCROOT)", srcroot)
+    if os.path.isabs(val): return val
+    return os.path.join(srcroot, val)
+for it in items:
+    bs=it.get("buildSettings",{})
+    pbid=bs.get("PRODUCT_BUNDLE_IDENTIFIER","")
+    if pbid==os.environ.get("BUNDLE_ID",""):
+        srcroot=bs.get("SRCROOT","")
+        plist = bs.get("INFOPLIST_FILE") or bs.get("INFOPLIST_PATH") or bs.get("INFOPLIST_FILE_PATH") or ""
+        target = bs.get("TARGET_NAME","")
+        plist = resolve(srcroot, plist)
+        print(srcroot); print(plist); print(target)
+        sys.exit(0)
+# not found -> print blanks, continue in shell for fallback
+print(""); print(""); print("")
+PY
+          " <<<"$SETTINGS_JSON"
+          )"
 
+          choose_plist=""
+          if [ -n "$PLIST_FROM_SETTINGS" ] && [ -f "$PLIST_FROM_SETTINGS" ]; then
+            choose_plist="$PLIST_FROM_SETTINGS"
+          fi
+
+          # === 3) План B: ищем Info.plist по содержимому CFBundleIdentifier
+          if [ -z "${choose_plist:-}" ]; then
+            echo "Fallback scan: searching Info.plist matching CFBundleIdentifier=$BUNDLE_ID"
+            mapfile -t plist_candidates < <(find "${SRCROOT:-.}" -type f -name "Info.plist" 2>/dev/null | sort)
+            for f in "${plist_candidates[@]}"; do
+              id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$f" 2>/dev/null || true)
+              # прямое совпадение
+              if [ "$id" = "$BUNDLE_ID" ]; then choose_plist="$f"; break; fi
+            done
+          fi
+
+          # === 4) План C: допускаем переменные в CFBundleIdentifier (например, $(PRODUCT_BUNDLE_IDENTIFIER))
+          if [ -z "${choose_plist:-}" ] && [ "${#plist_candidates[@]:-0}" -gt 0 ]; then
+            for f in "${plist_candidates[@]}"; do
+              id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$f" 2>/dev/null || true)
+              case "$id" in
+                *'$(PRODUCT_BUNDLE_IDENTIFIER)'*)
+                  choose_plist="$f"; break;;
+              esac
+            done
+          fi
+
+          # === 5) План D: берём plist, наиболее «похожий» на главный таргет/схему (без .appex)
+          if [ -z "${choose_plist:-}" ] && [ "${#plist_candidates[@]:-0}" -gt 0 ]; then
+            # сначала пробуем плейсы в папках, где путь содержит имя схемы
+            for f in "${plist_candidates[@]}"; do
+              case "$f" in
+                *"$XCODE_SCHEME"*/Info.plist) choose_plist="$f"; break;;
+              esac
+            done
+            # если и это не сработало — берём первый plist не из .appex
+            if [ -z "${choose_plist:-}" ]; then
+              for f in "${plist_candidates[@]}"; do
+                case "$f" in
+                  *.appex/*) ;; # пропускаем расширения
+                  *) choose_plist="$f"; break;;
+                esac
+              done
+            fi
+          fi
+
+          [ -n "${choose_plist:-}" ] && [ -f "$choose_plist" ] || { echo "❌ Не удалось надёжно найти Info.plist"; exit 1; }
+          PLIST="$choose_plist"
+          echo "✅ Using Info.plist: $PLIST"
+
+          # === 6) (опц.) маркетинговая версия, если задана APP_VERSION
           if [ -n "${APP_VERSION:-}" ]; then
             /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$PLIST" \
               || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $APP_VERSION" "$PLIST"
           fi
 
-          BUILD_NUM=$(date +%y%j%H%M%S)
+          # === 7) Всегда поднимаем Build → гарантированно новый (только цифры)
+          BUILD_NUM=$(date +%y%j%H%M%S)  # YY DDD HH MM SS
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUM" "$PLIST" \
             || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $BUILD_NUM" "$PLIST"
 
+          # === 8) Валидация и вывод
           /usr/bin/plutil -lint "$PLIST"
           echo "== Final versions =="
-          echo "Version  = $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST" 2>/dev/null || echo '(unchanged)')"
-          echo "Build    = $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")"
+          echo "CFBundleShortVersionString=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST" 2>/dev/null || echo '(unchanged)')"
+          echo "CFBundleVersion=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")"
 
       - name: Archive and export IPA (xcodebuild)
         script: |
@@ -133,6 +208,8 @@ workflows:
 
           echo "Export dir listing:"
           ls -lah "$EXPORT_PATH" || true
+
+          # Упадём явно, если .ipa не создана (чтобы не было 'No artifacts were found')
           test -e "$EXPORT_PATH"/*.ipa
 
     artifacts:
