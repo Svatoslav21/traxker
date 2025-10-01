@@ -24,14 +24,16 @@ workflows:
           keychain initialize
           keychain import cert.p12 -P "$CERTIFICATE_PASSWORD" -A
 
-          # Установка provisioning profile
+          # Установка provisioning profile и извлечение UUID
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print UUID' /dev/stdin <<< $(security cms -D -i profile.mobileprovision))
           cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/$PROFILE_UUID.mobileprovision
           echo "Using Provisioning Profile UUID: $PROFILE_UUID"
 
+          # Сохраняем UUID для следующих шагов
+          echo "PROFILE_UUID=$PROFILE_UUID" >> $CM_ENV
+
           # Генерация корректного exportOptions.plist
-          rm -f exportOptions.plist
           cat > exportOptions.plist <<EOI
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -52,16 +54,18 @@ workflows:
           EOI
           /usr/bin/plutil -lint exportOptions.plist
 
-          # ВАЖНО: прописываем профиль в проект (manual signing)
-          xcode-project use-profiles --export-options-plist "exportOptions.plist"
+          # Прописываем профиль в проект на время CI
+          xcode-project use-profiles \
+            --project "$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME" \
+            --export-options-plist "exportOptions.plist"
 
       - name: Сборка .ipa (Xcode project)
         script: |
-          # Дополнительно передаём параметры подписания на всякий случай
+          # Доверимся настройкам, внесённым use-profiles (без ломких флагов)
           xcode-project build-ipa \
             --project "$XCODE_PROJECT" \
             --scheme "$XCODE_SCHEME" \
-            --archive-flags "DEVELOPMENT_TEAM=$TEAM_ID CODE_SIGN_STYLE=Manual PROVISIONING_PROFILE_SPECIFIER=$PROFILE_UUID CODE_SIGN_IDENTITY=Apple\ Distribution" \
             --export-options-plist "exportOptions.plist"
 
     artifacts:
