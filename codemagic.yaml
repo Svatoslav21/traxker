@@ -8,7 +8,7 @@ workflows:
         - signing            # CERTIFICATE_P12, CERTIFICATE_PASSWORD, MOBILEPROVISION
         - appstore_connect   # APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY_IDENTIFIER, APP_STORE_CONNECT_PRIVATE_KEY
       vars:
-        XCODE_PROJECT: "Trackify.xcodeproj"   # если появится Pods/.xcworkspace — скажу, поменяем на workspace
+        XCODE_PROJECT: "Trackify.xcodeproj"
         XCODE_SCHEME: "Trackify"
         BUNDLE_ID: "dev.annebunas.trackifyrrrr"
         TEAM_ID: "3S4N4WVT3G"
@@ -17,28 +17,27 @@ workflows:
     scripts:
       - name: Импорт сертификата и профиля
         script: |
+          set -euo pipefail
+
           echo "$CERTIFICATE_P12" | base64 --decode > cert.p12
           echo "$MOBILEPROVISION" | base64 --decode > profile.mobileprovision
 
-          # Keychain + сертификат (правильная команда Codemagic CLI)
+          # Keychain + сертификат
           keychain initialize
-          # если пароль есть — передадим, если пустой — флаг не добавляем
-          if [ -n "$CERTIFICATE_PASSWORD" ]; then
+          if [ -n "${CERTIFICATE_PASSWORD:-}" ]; then
             keychain add-certificates --certificate cert.p12 --certificate-password "$CERTIFICATE_PASSWORD"
           else
             keychain add-certificates --certificate cert.p12
           fi
 
-          # Установка provisioning profile и извлечение UUID
+          # Установка provisioning profile и UUID
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print UUID' /dev/stdin <<< $(security cms -D -i profile.mobileprovision))
-          cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/$PROFILE_UUID.mobileprovision
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print UUID' /dev/stdin <<< "$(security cms -D -i profile.mobileprovision)")
+          cp profile.mobileprovision "~/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
           echo "Using Provisioning Profile UUID: $PROFILE_UUID"
+          echo "PROFILE_UUID=$PROFILE_UUID" >> "$CM_ENV"
 
-          # Сохраняем UUID для следующих шагов
-          echo "PROFILE_UUID=$PROFILE_UUID" >> $CM_ENV
-
-          # Корректный exportOptions.plist (валидный XML)
+          # Валидный exportOptions.plist
           cat > exportOptions.plist <<EOI
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -59,18 +58,38 @@ workflows:
           EOI
           /usr/bin/plutil -lint exportOptions.plist
 
-          # Прописываем профиль в проект на время CI (без --scheme, так корректно)
-          xcode-project use-profiles \
-            --project "$XCODE_PROJECT" \
-            --export-options-plist "exportOptions.plist"
+          # Прописываем профиль в проект на время CI
+          xcode-project use-profiles --project "$XCODE_PROJECT" --export-options-plist exportOptions.plist
 
-      - name: Сборка .ipa (Xcode project)
+      - name: Архив и экспорт .ipa (чистый xcodebuild)
         script: |
-          # Схема должна быть Shared в репозитории (Product > Scheme > Manage Schemes…)
-          xcode-project build-ipa \
-            --project "$XCODE_PROJECT" \
-            --scheme "$XCODE_SCHEME" \
-            --export-options-plist "exportOptions.plist"
+          set -euo pipefail
+
+          ARCHIVE_PATH="$CM_BUILD_DIR/Trackify.xcarchive"
+          EXPORT_PATH="$CM_EXPORT_DIR"
+
+          echo "Archiving to: $ARCHIVE_PATH"
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Release \
+            -archivePath "$ARCHIVE_PATH" \
+            archive \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            COMPILER_INDEX_STORE_ENABLE=NO | xcbeautify
+
+          echo "Exporting IPA to: $EXPORT_PATH"
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportOptionsPlist exportOptions.plist \
+            -exportPath "$EXPORT_PATH" | xcbeautify
+
+          echo "Export dir listing:"
+          ls -lah "$EXPORT_PATH" || true
+          test -e "$EXPORT_PATH"/*.ipa
 
     artifacts:
       - $CM_EXPORT_DIR/*.ipa
@@ -82,4 +101,4 @@ workflows:
         api_key: $APP_STORE_CONNECT_PRIVATE_KEY
         key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
         issuer_id: $APP_STORE_CONNECT_ISSUER_ID
-        submit_to_testflight: true
+        su
