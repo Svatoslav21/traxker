@@ -64,7 +64,7 @@ workflows:
           xcode-project use-profiles --project "$XCODE_PROJECT" --export-options-plist exportOptions.plist
 
       - name: Bump build (and optional marketing version) — bash3-safe v2
-  script: |
+        script: |
     #!/usr/bin/env bash
     set -euo pipefail
 
