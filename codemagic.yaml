@@ -63,71 +63,86 @@ workflows:
 
           xcode-project use-profiles --project "$XCODE_PROJECT" --export-options-plist exportOptions.plist
 
-      - name: Bump build (and optional marketing version) — robust, pure bash
-        script: |
-          set -euo pipefail
-          # 0) Параметры
-          if [ -n "${XCODE_WORKSPACE:-}" ]; then PROJ_ARGS=(-workspace "$XCODE_WORKSPACE"); else PROJ_ARGS=(-project "${XCODE_PROJECT:?Set XCODE_PROJECT or XCODE_WORKSPACE}"); fi
-          : "${XCODE_SCHEME:?Set XCODE_SCHEME}"
-          : "${BUNDLE_ID:?Set BUNDLE_ID}"
+      - name: Bump build (and optional marketing version) — bash3-safe
+  script: |
+    set -euo pipefail
 
-          # 1) SRCROOT
-          SETTINGS=$(xcodebuild "${PROJ_ARGS[@]}" -scheme "$XCODE_SCHEME" -configuration Release -showBuildSettings || true)
-          SRCROOT=$(echo "$SETTINGS" | sed -n 's/^[[:space:]]*SRCROOT = \(.*\)$/\1/p' | head -n1)
-          SRCROOT=${SRCROOT:-"$PWD"}
+    # 0) Параметры проекта
+    if [ -n "${XCODE_WORKSPACE:-}" ]; then
+      PROJ_ARGS=(-workspace "$XCODE_WORKSPACE")
+    else
+      PROJ_ARGS=(-project "${XCODE_PROJECT:?Set XCODE_PROJECT or XCODE_WORKSPACE}")
+    fi
+    : "${XCODE_SCHEME:?Set XCODE_SCHEME}"
+    : "${BUNDLE_ID:?Set BUNDLE_ID}"
 
-          # 2) кандидаты Info.plist
-          mapfile -t plist_candidates < <(find "$SRCROOT" -type f -name "Info.plist" 2>/dev/null | sort)
+    # 1) SRCROOT и (если повезет) INFOPLIST_FILE из build settings
+    SETTINGS=$(xcodebuild "${PROJ_ARGS[@]}" -scheme "$XCODE_SCHEME" -configuration Release -showBuildSettings || true)
+    SRCROOT=$(echo "$SETTINGS" | sed -n 's/^[[:space:]]*SRCROOT = \(.*\)$/\1/p' | head -n1)
+    INFOPLIST_FILE_RAW=$(echo "$SETTINGS" | sed -n 's/^[[:space:]]*INFOPLIST_FILE = \(.*\)$/\1/p' | head -n1)
+    SRCROOT=${SRCROOT:-"$PWD"}
 
-          choose_plist=""
+    # 2) Сборка кандидата по INFOPLIST_FILE (если есть)
+    PLIST=""
+    if [ -n "${INFOPLIST_FILE_RAW:-}" ]; then
+      case "$INFOPLIST_FILE_RAW" in
+        /*) p="$INFOPLIST_FILE_RAW" ;;
+        '$'(SRCROOT)*) p="${INFOPLIST_FILE_RAW/\$(SRCROOT)/$SRCROOT}" ;;
+        *) p="$SRCROOT/$INFOPLIST_FILE_RAW" ;;
+      esac
+      [ -f "$p" ] && PLIST="$p"
+    fi
 
-          # A) точное совпадение CFBundleIdentifier
-          for f in "${plist_candidates[@]}"; do
-            id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$f" 2>/dev/null || true)
-            if [ "$id" = "$BUNDLE_ID" ]; then choose_plist="$f"; break; fi
-          done
+    # 3) Поиск *Info.plist с нужным CFBundleIdentifier (несколько проходов)
 
-          # B) содержит $(PRODUCT_BUNDLE_IDENTIFIER)
-          if [ -z "$choose_plist" ]; then
-            for f in "${plist_candidates[@]}"; do
-              id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$f" 2>/dev/null || true)
-              case "$id" in *'$(PRODUCT_BUNDLE_IDENTIFIER)'*) choose_plist="$f"; break;; esac
-            done
-          fi
+    # A) точное совпадение CFBundleIdentifier == BUNDLE_ID
+    if [ -z "$PLIST" ]; then
+      while IFS= read -r -d '' f; do
+        id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$f" 2>/dev/null || true)
+        if [ "$id" = "$BUNDLE_ID" ]; then PLIST="$f"; break; fi
+      done < <(find "$SRCROOT" -type f -name "*Info.plist" -print0 2>/dev/null)
+    fi
 
-          # C) путь содержит имя схемы
-          if [ -z "$choose_plist" ]; then
-            for f in "${plist_candidates[@]}"; do
-              case "$f" in *"$XCODE_SCHEME"*/Info.plist) choose_plist="$f"; break;; esac
-            done
-          fi
+    # B) CFBundleIdentifier содержит $(PRODUCT_BUNDLE_IDENTIFIER)
+    if [ -z "$PLIST" ]; then
+      while IFS= read -r -d '' f; do
+        id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$f" 2>/dev/null || true)
+        case "$id" in *'$(PRODUCT_BUNDLE_IDENTIFIER)'*) PLIST="$f"; break;; esac
+      done < <(find "$SRCROOT" -type f -name "*Info.plist" -print0 2>/dev/null)
+    fi
 
-          # D) первый plist не из .appex
-          if [ -z "$choose_plist" ] && [ "${#plist_candidates[@]}" -gt 0 ]; then
-            for f in "${plist_candidates[@]}"; do
-              case "$f" in *.appex/*) ;; *) choose_plist="$f"; break;; esac
-            done
-          fi
+    # C) путь содержит имя схемы (и не из .appex)
+    if [ -z "$PLIST" ]; then
+      while IFS= read -r -d '' f; do
+        case "$f" in *.appex/*) ;; *"$XCODE_SCHEME"*/Info.plist) PLIST="$f"; break;; esac
+      done < <(find "$SRCROOT" -type f -name "*Info.plist" -print0 2>/dev/null)
+    fi
 
-          [ -n "$choose_plist" ] && [ -f "$choose_plist" ] || { echo "❌ Не удалось найти Info.plist для $BUNDLE_ID"; exit 1; }
-          PLIST="$choose_plist"
-          echo "✅ Using Info.plist: $PLIST"
+    # D) первый plist не из .appex
+    if [ -z "$PLIST" ]; then
+      while IFS= read -r -d '' f; do
+        case "$f" in *.appex/*) ;; *) PLIST="$f"; break;; esac
+      done < <(find "$SRCROOT" -type f -name "*Info.plist" -print0 2>/dev/null)
+    fi
 
-          # (опц.) маркетинговая версия
-          if [ -n "${APP_VERSION:-}" ]; then
-            /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$PLIST" \
-              || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $APP_VERSION" "$PLIST"
-          fi
+    [ -n "$PLIST" ] && [ -f "$PLIST" ] || { echo "❌ Не удалось найти *Info.plist для $BUNDLE_ID"; exit 1; }
+    echo "✅ Using Info.plist: $PLIST"
 
-          # Build — уникальный timestamp
-          BUILD_NUM=$(date +%y%j%H%M%S)
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUM" "$PLIST" \
-            || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $BUILD_NUM" "$PLIST"
+    # (опц.) маркетинговая версия из APP_VERSION
+    if [ -n "${APP_VERSION:-}" ]; then
+      /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$PLIST" \
+        || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $APP_VERSION" "$PLIST"
+    fi
 
-          /usr/bin/plutil -lint "$PLIST"
-          echo "== Final versions =="
-          echo "CFBundleShortVersionString=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST" 2>/dev/null || echo '(unchanged)')"
-          echo "CFBundleVersion=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")"
+    # Build — уникальный timestamp (только цифры)
+    BUILD_NUM=$(date +%y%j%H%M%S)
+    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUM" "$PLIST" \
+      || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $BUILD_NUM" "$PLIST"
+
+    /usr/bin/plutil -lint "$PLIST"
+    echo "== Final versions =="
+    echo "CFBundleShortVersionString=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST" 2>/dev/null || echo '(unchanged)')"
+    echo "CFBundleVersion=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")"
 
       - name: Archive and export IPA (xcodebuild)
         script: |
