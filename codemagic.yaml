@@ -5,8 +5,8 @@ workflows:
 
     environment:
       groups:
-        - signing            # CERTIFICATE_P12, CERTIFICATE_PASSWORD, MOBILEPROVISION
-        - appstore_connect   # APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY_IDENTIFIER, APP_STORE_CONNECT_PRIVATE_KEY
+        - signing
+        - appstore_connect
       vars:
         XCODE_PROJECT: "Trackify.xcodeproj"
         XCODE_SCHEME: "Trackify"
@@ -22,7 +22,6 @@ workflows:
           echo "$CERTIFICATE_P12" | base64 --decode > cert.p12
           echo "$MOBILEPROVISION" | base64 --decode > profile.mobileprovision
 
-          # Keychain + certificate
           keychain initialize
           if [ -n "${CERTIFICATE_PASSWORD:-}" ]; then
             keychain add-certificates --certificate cert.p12 --certificate-password "$CERTIFICATE_PASSWORD"
@@ -30,7 +29,6 @@ workflows:
             keychain add-certificates --certificate cert.p12
           fi
 
-          # Install provisioning profile and read UUID + TeamIdentifier
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           PROFILE_PLIST="$(security cms -D -i profile.mobileprovision)"
           PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print UUID' /dev/stdin <<< "$PROFILE_PLIST")
@@ -40,141 +38,92 @@ workflows:
           echo "Using Provisioning Profile UUID: $PROFILE_UUID"
           echo "TeamIdentifier from profile: $PROFILE_TEAM_ID"
 
-          # export to env for next steps
           echo "PROFILE_UUID=$PROFILE_UUID" >> "$CM_ENV"
           echo "TEAM_ID=$PROFILE_TEAM_ID"   >> "$CM_ENV"
 
-          # Diagnostics (не ломают билд)
           echo "== Code signing identities in keychain =="
           security find-identity -v -p codesigning || true
 
-          # Valid exportOptions.plist (XML)
           cat > exportOptions.plist <<EOI
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
+          <plist version="1.0"><dict>
             <key>method</key><string>${EXPORT_METHOD}</string>
             <key>teamID</key><string>${TEAM_ID}</string>
             <key>signingStyle</key><string>manual</string>
-            <key>provisioningProfiles</key>
-            <dict>
+            <key>provisioningProfiles</key><dict>
               <key>${BUNDLE_ID}</key><string>${PROFILE_UUID}</string>
             </dict>
             <key>compileBitcode</key><false/>
             <key>stripSwiftSymbols</key><true/>
             <key>destination</key><string>export</string>
-          </dict>
-          </plist>
+          </dict></plist>
           EOI
           /usr/bin/plutil -lint exportOptions.plist
 
-          # Apply profile into the project for manual signing
           xcode-project use-profiles --project "$XCODE_PROJECT" --export-options-plist exportOptions.plist
-          
-      - name: Bump build (and optional marketing version) — robust
+
+      - name: Bump build (and optional marketing version) — robust, pure bash
         script: |
           set -euo pipefail
-
-          # === 0) Входные параметры проекта
-          if [ -n "${XCODE_WORKSPACE:-}" ]; then PROJ_ARGS=(-workspace "$XCODE_WORKSPACE")
-          else PROJ_ARGS=(-project "${XCODE_PROJECT:?Set XCODE_PROJECT or XCODE_WORKSPACE}"); fi
+          # 0) Параметры
+          if [ -n "${XCODE_WORKSPACE:-}" ]; then PROJ_ARGS=(-workspace "$XCODE_WORKSPACE"); else PROJ_ARGS=(-project "${XCODE_PROJECT:?Set XCODE_PROJECT or XCODE_WORKSPACE}"); fi
           : "${XCODE_SCHEME:?Set XCODE_SCHEME}"
           : "${BUNDLE_ID:?Set BUNDLE_ID}"
 
-          # === 1) Собираем build settings в JSON
-          SETTINGS_JSON=$(xcodebuild "${PROJ_ARGS[@]}" -scheme "$XCODE_SCHEME" -configuration Release -showBuildSettings -json)
+          # 1) SRCROOT
+          SETTINGS=$(xcodebuild "${PROJ_ARGS[@]}" -scheme "$XCODE_SCHEME" -configuration Release -showBuildSettings || true)
+          SRCROOT=$(echo "$SETTINGS" | sed -n 's/^[[:space:]]*SRCROOT = \(.*\)$/\1/p' | head -n1)
+          SRCROOT=${SRCROOT:-"$PWD"}
 
-          # === 2) Находим нужный Info.plist по PRODUCT_BUNDLE_IDENTIFIER == BUNDLE_ID
-          read -r SRCROOT PLIST_FROM_SETTINGS TARGET_NAME <<<"$(
-            /usr/bin/python3 - <<'PY'
-import sys,json,os,re
-data=json.load(sys.stdin)
-srcroot=plist=target=""
-items=data if isinstance(data,list) else [data]
-def resolve(srcroot, val):
-    if not val: return ""
-    if val.startswith("$(SRCROOT)"): return val.replace("$(SRCROOT)", srcroot)
-    if os.path.isabs(val): return val
-    return os.path.join(srcroot, val)
-for it in items:
-    bs=it.get("buildSettings",{})
-    pbid=bs.get("PRODUCT_BUNDLE_IDENTIFIER","")
-    if pbid==os.environ.get("BUNDLE_ID",""):
-        srcroot=bs.get("SRCROOT","")
-        plist = bs.get("INFOPLIST_FILE") or bs.get("INFOPLIST_PATH") or bs.get("INFOPLIST_FILE_PATH") or ""
-        target = bs.get("TARGET_NAME","")
-        plist = resolve(srcroot, plist)
-        print(srcroot); print(plist); print(target)
-        sys.exit(0)
-# not found -> print blanks, continue in shell for fallback
-print(""); print(""); print("")
-PY
-          " <<<"$SETTINGS_JSON"
-          )"
+          # 2) кандидаты Info.plist
+          mapfile -t plist_candidates < <(find "$SRCROOT" -type f -name "Info.plist" 2>/dev/null | sort)
 
           choose_plist=""
-          if [ -n "$PLIST_FROM_SETTINGS" ] && [ -f "$PLIST_FROM_SETTINGS" ]; then
-            choose_plist="$PLIST_FROM_SETTINGS"
-          fi
 
-          # === 3) План B: ищем Info.plist по содержимому CFBundleIdentifier
-          if [ -z "${choose_plist:-}" ]; then
-            echo "Fallback scan: searching Info.plist matching CFBundleIdentifier=$BUNDLE_ID"
-            mapfile -t plist_candidates < <(find "${SRCROOT:-.}" -type f -name "Info.plist" 2>/dev/null | sort)
+          # A) точное совпадение CFBundleIdentifier
+          for f in "${plist_candidates[@]}"; do
+            id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$f" 2>/dev/null || true)
+            if [ "$id" = "$BUNDLE_ID" ]; then choose_plist="$f"; break; fi
+          done
+
+          # B) содержит $(PRODUCT_BUNDLE_IDENTIFIER)
+          if [ -z "$choose_plist" ]; then
             for f in "${plist_candidates[@]}"; do
               id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$f" 2>/dev/null || true)
-              # прямое совпадение
-              if [ "$id" = "$BUNDLE_ID" ]; then choose_plist="$f"; break; fi
+              case "$id" in *'$(PRODUCT_BUNDLE_IDENTIFIER)'*) choose_plist="$f"; break;; esac
             done
           fi
 
-          # === 4) План C: допускаем переменные в CFBundleIdentifier (например, $(PRODUCT_BUNDLE_IDENTIFIER))
-          if [ -z "${choose_plist:-}" ] && [ "${#plist_candidates[@]:-0}" -gt 0 ]; then
+          # C) путь содержит имя схемы
+          if [ -z "$choose_plist" ]; then
             for f in "${plist_candidates[@]}"; do
-              id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$f" 2>/dev/null || true)
-              case "$id" in
-                *'$(PRODUCT_BUNDLE_IDENTIFIER)'*)
-                  choose_plist="$f"; break;;
-              esac
+              case "$f" in *"$XCODE_SCHEME"*/Info.plist) choose_plist="$f"; break;; esac
             done
           fi
 
-          # === 5) План D: берём plist, наиболее «похожий» на главный таргет/схему (без .appex)
-          if [ -z "${choose_plist:-}" ] && [ "${#plist_candidates[@]:-0}" -gt 0 ]; then
-            # сначала пробуем плейсы в папках, где путь содержит имя схемы
+          # D) первый plist не из .appex
+          if [ -z "$choose_plist" ] && [ "${#plist_candidates[@]}" -gt 0 ]; then
             for f in "${plist_candidates[@]}"; do
-              case "$f" in
-                *"$XCODE_SCHEME"*/Info.plist) choose_plist="$f"; break;;
-              esac
+              case "$f" in *.appex/*) ;; *) choose_plist="$f"; break;; esac
             done
-            # если и это не сработало — берём первый plist не из .appex
-            if [ -z "${choose_plist:-}" ]; then
-              for f in "${plist_candidates[@]}"; do
-                case "$f" in
-                  *.appex/*) ;; # пропускаем расширения
-                  *) choose_plist="$f"; break;;
-                esac
-              done
-            fi
           fi
 
-          [ -n "${choose_plist:-}" ] && [ -f "$choose_plist" ] || { echo "❌ Не удалось надёжно найти Info.plist"; exit 1; }
+          [ -n "$choose_plist" ] && [ -f "$choose_plist" ] || { echo "❌ Не удалось найти Info.plist для $BUNDLE_ID"; exit 1; }
           PLIST="$choose_plist"
           echo "✅ Using Info.plist: $PLIST"
 
-          # === 6) (опц.) маркетинговая версия, если задана APP_VERSION
+          # (опц.) маркетинговая версия
           if [ -n "${APP_VERSION:-}" ]; then
             /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$PLIST" \
               || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $APP_VERSION" "$PLIST"
           fi
 
-          # === 7) Всегда поднимаем Build → гарантированно новый (только цифры)
-          BUILD_NUM=$(date +%y%j%H%M%S)  # YY DDD HH MM SS
+          # Build — уникальный timestamp
+          BUILD_NUM=$(date +%y%j%H%M%S)
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUM" "$PLIST" \
             || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $BUILD_NUM" "$PLIST"
 
-          # === 8) Валидация и вывод
           /usr/bin/plutil -lint "$PLIST"
           echo "== Final versions =="
           echo "CFBundleShortVersionString=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST" 2>/dev/null || echo '(unchanged)')"
@@ -183,7 +132,6 @@ PY
       - name: Archive and export IPA (xcodebuild)
         script: |
           set -euo pipefail
-
           ARCHIVE_PATH="$CM_BUILD_DIR/Trackify.xcarchive"
           EXPORT_PATH="$CM_EXPORT_DIR"
 
@@ -208,8 +156,6 @@ PY
 
           echo "Export dir listing:"
           ls -lah "$EXPORT_PATH" || true
-
-          # Упадём явно, если .ipa не создана (чтобы не было 'No artifacts were found')
           test -e "$EXPORT_PATH"/*.ipa
 
     artifacts:
