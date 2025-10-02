@@ -11,10 +11,10 @@ workflows:
         XCODE_PROJECT: "Trackify.xcodeproj"   # или задай XCODE_WORKSPACE вместо XCODE_PROJECT
         XCODE_SCHEME: "Trackify"
         BUNDLE_ID: "dev.annebunas.trackifyrrrr"
-        TEAM_ID: "OVERRIDE_BY_PROFILE"        # подменится значением из профиля
+        TEAM_ID: "OVERRIDE_BY_PROFILE"        # заменится значением из профиля
         EXPORT_METHOD: "app-store"
-        # INFO_PLIST: "Trackify/Supporting Files/Info.plist"  # ← можешь раскомментировать и указать точный путь
-        # APP_VERSION: "1.1"                                   # ← задай в UI, если хочешь поднять маркетинговую версию
+        # APP_VERSION: "1.1"                  # ← опционально, если хочешь поднять маркетинговую версию
+        # APP_BUILD: "123"                    # ← опционально, если хочешь задать build вручную (иначе timestamp)
 
     scripts:
       - name: "Import certificate and profile"
@@ -67,86 +67,22 @@ workflows:
           # Apply profile into the project for manual signing
           xcode-project use-profiles --project "$XCODE_PROJECT" --export-options-plist exportOptions.plist
 
-      - name: "Bump build (bash3-safe v4)"
+      - name: "Prepare versions (no Info.plist)"
         script: |
-          #!/usr/bin/env bash
           set -euo pipefail
 
-          # --- Project args
-          if [ -n "${XCODE_WORKSPACE:-}" ]; then
-            PROJ_ARGS=(-workspace "$XCODE_WORKSPACE")
-          else
-            PROJ_ARGS=(-project "${XCODE_PROJECT:?Set XCODE_PROJECT or XCODE_WORKSPACE}")
-          fi
-          : "${XCODE_SCHEME:?Set XCODE_SCHEME}"
+          # Всегда новый build; можно переопределить APP_BUILD в UI
+          BUILD_NUM="${APP_BUILD:-$(date +%y%j%H%M%S)}"
+          echo "BUILD_NUM=$BUILD_NUM" >> "$CM_ENV"
 
-          # --- 0) Manual override via INFO_PLIST
-          if [ -n "${INFO_PLIST:-}" ] && [ -f "$INFO_PLIST" ]; then
-            PLIST="$INFO_PLIST"
-            echo "Using INFO_PLIST override: $PLIST"
-          else
-            PLIST=""
-          fi
-
-          # --- 1) Try to get INFOPLIST_FILE from build settings
-          if [ -z "${PLIST:-}" ]; then
-            SETTINGS=$(xcodebuild "${PROJ_ARGS[@]}" -scheme "$XCODE_SCHEME" -configuration Release -showBuildSettings || true)
-            SRCROOT=$(echo "$SETTINGS" | sed -n 's/^[[:space:]]*SRCROOT = \(.*\)$/\1/p' | head -n1)
-            INFOPLIST_FILE_RAW=$(echo "$SETTINGS" | sed -n 's/^[[:space:]]*INFOPLIST_FILE = \(.*\)$/\1/p' | head -n1)
-            SRCROOT=${SRCROOT:-"$PWD"}
-
-            if [ -n "${INFOPLIST_FILE_RAW:-}" ]; then
-              if [[ "$INFOPLIST_FILE_RAW" == /* ]]; then
-                p="$INFOPLIST_FILE_RAW"
-              elif [[ "$INFOPLIST_FILE_RAW" == \$\(SRCROOT\)* ]]; then
-                p="${INFOPLIST_FILE_RAW/\$(SRCROOT)/$SRCROOT}"
-              else
-                p="$SRCROOT/$INFOPLIST_FILE_RAW"
-              fi
-              if [ -f "$p" ]; then
-                PLIST="$p"
-                echo "Using INFOPLIST_FILE: $PLIST"
-              fi
-            fi
-          fi
-
-          # --- 2) Fallback scan for *Info*.plist having CFBundleVersion
-          if [ -z "${PLIST:-}" ]; then
-            echo "Scanning for *Info*.plist under: ${SRCROOT:-$PWD}"
-            candidates_file=$(mktemp)
-            find "${SRCROOT:-$PWD}" \
-              \( -path "*/Pods/*" -o -path "*/Carthage/*" -o -path "*/DerivedData/*" \) -prune -o \
-              -type f -name "*Info*.plist" -print > "$candidates_file" || true
-
-            echo "Found candidates:"; sed 's/^/  - /' "$candidates_file" || true
-
-            while IFS= read -r f; do
-              /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$f" >/dev/null 2>&1 || continue
-              case "$f" in *.appex/*) continue ;; esac
-              PLIST="$f"; break
-            done < "$candidates_file"
-
-            rm -f "$candidates_file"
-          fi
-
-          [ -n "${PLIST:-}" ] && [ -f "$PLIST" ] || { echo "❌ Не удалось найти рабочий Info.plist. Задай INFO_PLIST в переменных окружения Codemagic."; exit 1; }
-          echo "✅ Using Info.plist: $PLIST"
-
-          # (optional) Marketing version
+          # APP_VERSION берётся из UI (если нужна смена маркетинговой версии)
           if [ -n "${APP_VERSION:-}" ]; then
-            /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$PLIST" \
-              || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $APP_VERSION" "$PLIST"
+            echo "APP_VERSION=$APP_VERSION" >> "$CM_ENV"
           fi
 
-          # Build — unique timestamp
-          BUILD_NUM=$(date +%y%j%H%M%S)
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUM" "$PLIST" \
-            || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $BUILD_NUM" "$PLIST"
-
-          /usr/bin/plutil -lint "$PLIST"
-          echo "== Final versions =="
-          echo "CFBundleShortVersionString=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST" 2>/dev/null || echo '(unchanged)')"
-          echo "CFBundleVersion=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")"
+          echo "== Planned versions =="
+          echo "MARKETING_VERSION=${APP_VERSION:-(unchanged)}"
+          echo "CURRENT_PROJECT_VERSION=$BUILD_NUM"
 
       - name: "Archive and export IPA (xcodebuild)"
         script: |
@@ -154,6 +90,12 @@ workflows:
 
           ARCHIVE_PATH="$CM_BUILD_DIR/Trackify.xcarchive"
           EXPORT_PATH="$CM_EXPORT_DIR"
+
+          # Доп. флаги версий прямо в xcodebuild (работает без Info.plist)
+          EXTRA_FLAGS=( CURRENT_PROJECT_VERSION="$BUILD_NUM" )
+          if [ -n "${APP_VERSION:-}" ]; then
+            EXTRA_FLAGS+=( MARKETING_VERSION="$APP_VERSION" )
+          fi
 
           echo "Archiving to: $ARCHIVE_PATH"
           xcodebuild \
@@ -166,7 +108,8 @@ workflows:
             CODE_SIGN_STYLE=Manual \
             PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
             CODE_SIGN_IDENTITY="Apple Distribution" \
-            COMPILER_INDEX_STORE_ENABLE=NO
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            "${EXTRA_FLAGS[@]}"
 
           echo "Exporting IPA to: $EXPORT_PATH"
           xcodebuild -exportArchive \
