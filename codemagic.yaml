@@ -49,7 +49,7 @@ workflows:
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" || true
 
-     - name: Archive with Smart xcconfig
+      - name: Archive with Smart xcconfig
         script: |
           set -euo pipefail
 
