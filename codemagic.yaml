@@ -56,21 +56,14 @@ workflows:
           ARCHIVE_PATH="$CM_BUILD_DIR/${XCODE_SCHEME}.xcarchive"
           rm -rf "$ARCHIVE_PATH" || true
 
-          # Создаем "умный" xcconfig.
-          # Мы применяем профиль и команду ТОЛЬКО к нашему Bundle ID.
-          # Для всех остальных таргетов (SPM) настройки останутся пустыми/автоматическими.
-          
+          # ИСПРАВЛЕНИЕ:
+          # 1. Убираем CODE_SIGN_STYLE = Manual. Ставим Automatic, чтобы SPM зависимости не ломались.
+          # 2. Убираем PROVISIONING_PROFILE_SPECIFIER. Xcode сам найдет профиль по Bundle ID.
+          # 3. Оставляем CODE_SIGN_IDENTITY и DEVELOPMENT_TEAM, чтобы направить Xcode.
+
           echo "DEVELOPMENT_TEAM = $TEAM_ID" > build.xcconfig
-          echo "CODE_SIGN_STYLE = Manual" >> build.xcconfig
-          
-          # Это ключевой момент: применяем профиль только к конкретному Bundle ID
-          echo "PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*] = $PROFILE_UUID" >> build.xcconfig
-          echo "CODE_SIGN_IDENTITY[sdk=iphoneos*] = Apple Distribution" >> build.xcconfig
-          
-          # Дополнительная защита: явно отключаем подпись для SPM зависимостей, если они пытаются подписаться
-          # (Обычно не требуется, если верхние настройки правильные, но для надежности)
-          # Но лучше просто задать правильный PRODUCT_BUNDLE_IDENTIFIER для основного таргета
-          
+          echo "CODE_SIGN_STYLE = Automatic" >> build.xcconfig
+          echo "CODE_SIGN_IDENTITY = Apple Distribution" >> build.xcconfig
           echo "PRODUCT_BUNDLE_IDENTIFIER = $BUNDLE_ID" >> build.xcconfig
 
           # Запускаем архив
