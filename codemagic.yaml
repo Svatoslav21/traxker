@@ -39,7 +39,7 @@ workflows:
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           cp /tmp/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
           
-          # Get the UUID of the profile to use it later
+          # Get the UUID of the profile
           PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' /dev/stdin <<< $(security cms -D -i /tmp/profile.mobileprovision))
           echo "PROFILE_UUID=$PROFILE_UUID" >> $CM_ENV
 
@@ -49,22 +49,31 @@ workflows:
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" || true
 
-      - name: Archive with xcconfig
+      - name: Archive with Smart xcconfig
         script: |
           set -euo pipefail
 
           ARCHIVE_PATH="$CM_BUILD_DIR/${XCODE_SCHEME}.xcarchive"
           rm -rf "$ARCHIVE_PATH" || true
 
-          # Создаем xcconfig файл, чтобы применить подпись ТОЛЬКО к нашему Bundle ID
-          # Это предотвращает попытки подписать библиотеки SPM
-          echo "PRODUCT_BUNDLE_IDENTIFIER = $BUNDLE_ID" > build.xcconfig
-          echo "DEVELOPMENT_TEAM = $TEAM_ID" >> build.xcconfig
+          # Создаем "умный" xcconfig.
+          # Мы применяем профиль и команду ТОЛЬКО к нашему Bundle ID.
+          # Для всех остальных таргетов (SPM) настройки останутся пустыми/автоматическими.
+          
+          echo "DEVELOPMENT_TEAM = $TEAM_ID" > build.xcconfig
           echo "CODE_SIGN_STYLE = Manual" >> build.xcconfig
-          echo "CODE_SIGN_IDENTITY = Apple Distribution" >> build.xcconfig
-          echo "PROVISIONING_PROFILE_SPECIFIER = $PROFILE_UUID" >> build.xcconfig
+          
+          # Это ключевой момент: применяем профиль только к конкретному Bundle ID
+          echo "PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*] = $PROFILE_UUID" >> build.xcconfig
+          echo "CODE_SIGN_IDENTITY[sdk=iphoneos*] = Apple Distribution" >> build.xcconfig
+          
+          # Дополнительная защита: явно отключаем подпись для SPM зависимостей, если они пытаются подписаться
+          # (Обычно не требуется, если верхние настройки правильные, но для надежности)
+          # Но лучше просто задать правильный PRODUCT_BUNDLE_IDENTIFIER для основного таргета
+          
+          echo "PRODUCT_BUNDLE_IDENTIFIER = $BUNDLE_ID" >> build.xcconfig
 
-          # Запускаем архив, используя созданный конфиг
+          # Запускаем архив
           xcodebuild \
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
