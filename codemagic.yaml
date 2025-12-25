@@ -2,10 +2,12 @@ workflows:
   ios_appstore_ipa:
     name: iOS App Store IPA
     max_build_duration: 90
-    
+    instance_type: mac_mini_m2
+
     environment:
       groups:
-        - appstore_connect
+        - appstore_connect # Для загрузки в TestFlight/AppStore (если нужно)
+        - signing          # ВАЖНО: Добавлена группа с вашими P12 и MobileProvision
       vars:
         XCODE_PROJECT: "Project-21-12-25-1.xcodeproj"
         XCODE_SCHEME: "Project-21-12-25-1"
@@ -24,22 +26,27 @@ workflows:
         script: |
           keychain initialize
 
-      - name: Fetch signing files (App Store) from App Store Connect
+      # ШАГ ИЗМЕНЕН: Вместо скачивания из Apple, берем из ваших секретов
+      - name: Install Certificate and Profile from Secrets
         script: |
-          app-store-connect fetch-signing-files "$BUNDLE_ID" \
-            --type IOS_APP_STORE \
-            --create
+          # Декодируем P12 и добавляем в кейчейн
+          echo $CERTIFICATE_P12 | base64 --decode > /tmp/certificate.p12
+          keychain add-certificates --certificate /tmp/certificate.p12 --certificate-password "$CERTIFICATE_PASSWORD"
 
-      - name: Add certificates to keychain
-        script: |
-          keychain add-certificates
+          # Декодируем MobileProvision
+          echo $MOBILEPROVISION | base64 --decode > /tmp/profile.mobileprovision
+          
+          # Копируем профиль в нужную папку
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp /tmp/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
 
       - name: Apply signing to Xcode project (only app targets)
         script: |
-          # Добавлен флаг --target, чтобы не ломать SPM зависимости
+          # Применяем конкретный профиль из файла к таргету
           xcode-project use-profiles \
             --project "$XCODE_PROJECT" \
             --target "$XCODE_SCHEME" \
+            --profile /tmp/profile.mobileprovision \
             --export-options-plist exportOptions.plist
 
       - name: Patch exportOptions.plist (ensure method/team/signingStyle)
@@ -47,7 +54,10 @@ workflows:
           /usr/libexec/PlistBuddy -c "Set :method $EXPORT_METHOD" exportOptions.plist || true
           /usr/libexec/PlistBuddy -c "Set :signingStyle manual" exportOptions.plist || true
           /usr/libexec/PlistBuddy -c "Set :teamID $TEAM_ID" exportOptions.plist || true
-
+          
+          # Важно: при ручной подписи иногда нужно явно указать профиль в plist
+          # Но xcode-project use-profiles обычно справляется.
+          
           echo "---- exportOptions.plist ----"
           /usr/libexec/PlistBuddy -c "Print" exportOptions.plist || true
 
@@ -57,7 +67,7 @@ workflows:
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" || true
 
-      - name: Archive (NO manual signing flags here)
+      - name: Archive
         script: |
           set -euo pipefail
 
