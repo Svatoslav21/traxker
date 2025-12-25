@@ -49,22 +49,26 @@ workflows:
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" || true
 
-      - name: Archive with Smart xcconfig
+     - name: Archive with Smart xcconfig
         script: |
           set -euo pipefail
 
           ARCHIVE_PATH="$CM_BUILD_DIR/${XCODE_SCHEME}.xcarchive"
           rm -rf "$ARCHIVE_PATH" || true
 
-          # ИСПРАВЛЕНИЕ:
-          # 1. Убираем CODE_SIGN_STYLE = Manual. Ставим Automatic, чтобы SPM зависимости не ломались.
-          # 2. Убираем PROVISIONING_PROFILE_SPECIFIER. Xcode сам найдет профиль по Bundle ID.
-          # 3. Оставляем CODE_SIGN_IDENTITY и DEVELOPMENT_TEAM, чтобы направить Xcode.
-
-          echo "DEVELOPMENT_TEAM = $TEAM_ID" > build.xcconfig
-          echo "CODE_SIGN_STYLE = Automatic" >> build.xcconfig
-          echo "CODE_SIGN_IDENTITY = Apple Distribution" >> build.xcconfig
-          echo "PRODUCT_BUNDLE_IDENTIFIER = $BUNDLE_ID" >> build.xcconfig
+          # РЕШЕНИЕ:
+          # 1. CODE_SIGN_IDENTITY = "-" означает Ad-Hoc подпись (без проверки сертификата).
+          #    Это позволяет собрать архив без ошибок SPM и без Dev-сертификата.
+          # 2. CODE_SIGN_STYLE = Manual переключает режим, чтобы Xcode не пытался умничать.
+          # 3. PROVISIONING_PROFILE_SPECIFIER оставляем пустым (не пишем), чтобы SPM не ругался.
+          
+          echo "CODE_SIGN_IDENTITY = -" > build.xcconfig
+          echo "CODE_SIGN_STYLE = Manual" >> build.xcconfig
+          echo "DEVELOPMENT_TEAM = $TEAM_ID" >> build.xcconfig
+          
+          # Явно отключаем требование подписи для зависимостей, если вдруг Xcode решит иначе
+          echo "CODE_SIGNING_REQUIRED = NO" >> build.xcconfig
+          echo "CODE_SIGNING_ALLOWED = YES" >> build.xcconfig
 
           # Запускаем архив
           xcodebuild \
