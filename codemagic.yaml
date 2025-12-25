@@ -56,19 +56,22 @@ workflows:
           ARCHIVE_PATH="$CM_BUILD_DIR/${XCODE_SCHEME}.xcarchive"
           rm -rf "$ARCHIVE_PATH" || true
 
-          # РЕШЕНИЕ:
-          # 1. CODE_SIGN_IDENTITY = "-" означает Ad-Hoc подпись (без проверки сертификата).
-          #    Это позволяет собрать архив без ошибок SPM и без Dev-сертификата.
-          # 2. CODE_SIGN_STYLE = Manual переключает режим, чтобы Xcode не пытался умничать.
-          # 3. PROVISIONING_PROFILE_SPECIFIER оставляем пустым (не пишем), чтобы SPM не ругался.
+          # СТРАТЕГИЯ: NO SIGNING AT ARCHIVE
+          # Мы собираем архив вообще без подписи.
+          # Подпись будет наложена ТОЛЬКО на этапе exportArchive.
           
-          echo "CODE_SIGN_IDENTITY = -" > build.xcconfig
-          echo "CODE_SIGN_STYLE = Manual" >> build.xcconfig
+          # 1. Говорим, что подпись не требуется.
+          echo "CODE_SIGNING_REQUIRED = NO" > build.xcconfig
+          echo "CODE_SIGNING_ALLOWED = NO" >> build.xcconfig
+          
+          # 2. Убираем любые упоминания идентичности и профилей.
+          echo "CODE_SIGN_IDENTITY = " >> build.xcconfig
+          echo "EXPANDED_CODE_SIGN_IDENTITY = " >> build.xcconfig
+          echo "PROVISIONING_PROFILE_SPECIFIER = " >> build.xcconfig
+          
+          # 3. Важно: Устанавливаем команду разработки, чтобы Xcode не ругался на её отсутствие,
+          # но подписывать не даем.
           echo "DEVELOPMENT_TEAM = $TEAM_ID" >> build.xcconfig
-          
-          # Явно отключаем требование подписи для зависимостей, если вдруг Xcode решит иначе
-          echo "CODE_SIGNING_REQUIRED = NO" >> build.xcconfig
-          echo "CODE_SIGNING_ALLOWED = YES" >> build.xcconfig
 
           # Запускаем архив
           xcodebuild \
@@ -79,7 +82,8 @@ workflows:
             -xcconfig build.xcconfig \
             archive \
             CURRENT_PROJECT_VERSION="$BUILD_NUM" \
-            COMPILER_INDEX_STORE_ENABLE=NO
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CODE_SIGN_STYLE="Manual"
 
           ls -lah "$CM_BUILD_DIR" || true
           test -d "$ARCHIVE_PATH"
