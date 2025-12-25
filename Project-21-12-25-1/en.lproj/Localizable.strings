@@ -1,0 +1,222 @@
+/* 
+  Localizable.strings
+  Dopamine Detox - Self Control
+  
+  English Localization
+*/
+
+// MARK: - Common
+"OK" = "OK";
+"Cancel" = "Cancel";
+"Save" = "Save";
+"Delete" = "Delete";
+"Edit" = "Edit";
+"Settings" = "Settings";
+"Home" = "Home";
+"Start" = "Start";
+"Get Premium" = "Get Premium";
+"Share Dopamine Detox To Friends" = "Share Dopamine Detox To Friends";
+"Contact Us" = "Contact Us";
+"Send Feedback" = "Send Feedback";
+"Rate Us" = "Rate Us";
+"Subscription" = "Subscription";
+"Try our Dopamine Detox app Block any app on your phone" = "Try our Dopamine Detox app Block any app on your phone";
+"Report" = "Report";
+"Error" = "Error";
+"Warning" = "Warning";
+"Success" = "Success";
+
+// MARK: - Home Screen
+"Dopamine Detox" = "Dopamine Detox";
+"Create Block" = "Create Block";
+"Saved Time" = "Saved Time";
+"Block Paused" = "Block Paused";
+"Block Active" = "Block Active";
+"No Active Block" = "No Active Block";
+"Resume" = "Resume";
+"Pause" = "Pause";
+"Stop" = "Stop";
+"Schedules" = "Schedules";
+"Hours" = "Hours";
+"Minutes" = "Minutes";
+"Seconds" = "Seconds";
+"Grayscale Mode" = "Grayscale Mode";
+
+// MARK: - Schedule Editor
+"Edit Schedule" = "Edit Schedule";
+"Block Details" = "Block Details";
+"Block Name" = "Block Name";
+"Start Time" = "Start Time";
+"End Time" = "End Time";
+"Repeat" = "Repeat";
+"Select Apps" = "Select Apps";
+"Blocked Apps" = "Blocked Apps";
+"Save Schedule" = "Save Schedule";
+"app(s) selected" = "app(s) selected";
+"Mon" = "Mon";
+"Tue" = "Tue";
+"Wed" = "Wed";
+"Thu" = "Thu";
+"Fri" = "Fri";
+"Sat" = "Sat";
+"Sun" = "Sun";
+
+// MARK: - Report Screen
+"Total Saved Time" = "Total Saved Time";
+"Statistics" = "Statistics";
+"Total Schedules" = "Total Schedules";
+"Active Schedules" = "Active Schedules";
+"Repeating Schedules" = "Repeating Schedules";
+"Current Block" = "Current Block";
+"Blocking Status" = "Blocking Status";
+"Blocking is active" = "Blocking is active";
+"Blocking is paused" = "Blocking is paused";
+"No active blocking" = "No active blocking";
+"Selected Apps" = "Selected Apps";
+"Screen Time" = "Screen Time";
+"Pickups" = "Pickups";
+"Today" = "Today";
+"This Week" = "This Week";
+"This Month" = "This Month";
+"Daily Average" = "Daily Average";
+"App Usage" = "App Usage";
+"Usage Statistics" = "Usage Statistics";
+"SUMMARY" = "SUMMARY";
+"SCREEN TIME PER DAY" = "SCREEN TIME PER DAY";
+"MOST TIME PER APP" = "MOST TIME PER APP";
+"DAILY AVERAGE" = "DAILY AVERAGE";
+"SCREEN TIME" = "SCREEN TIME";
+"Show More" = "Show More";
+"pickups" = "pickups";
+"notifications" = "notifications";
+"Day" = "Day";
+"Week" = "Week";
+"Month" = "Month";
+
+// MARK: - Settings Screen
+"Screen Time Access" = "Screen Time Access";
+"Request Authorization" = "Request Authorization";
+"Authorization" = "Authorization";
+"Theme" = "Theme";
+"System" = "System";
+"Light" = "Light";
+"Dark" = "Dark";
+"Appearance" = "Appearance";
+"How to select apps" = "How to select apps";
+"Help" = "Help";
+"Reset Saved Time" = "Reset Saved Time";
+"Data" = "Data";
+"Version" = "Version";
+"App Name" = "App Name";
+"About" = "About";
+
+// MARK: - How To Select Apps
+"How to select apps for blocking" = "How to select apps for blocking";
+"Follow these simple steps to set up app blocking" = "Follow these simple steps to set up app blocking";
+"Create or edit schedule" = "Create or edit schedule";
+"Press on schedule card or 'Create Block' button" = "Press on schedule card or 'Create Block' button";
+"Press 'Select Apps'" = "Press 'Select Apps'";
+"In schedule editor find 'Blocked Apps' section and press 'Select Apps' button" = "In schedule editor find 'Blocked Apps' section and press 'Select Apps' button";
+"Select applications" = "Select applications";
+"In opened window select apps you want to block. You can select multiple apps." = "In opened window select apps you want to block. You can select multiple apps.";
+"Save schedule" = "Save schedule";
+"Press 'Save Schedule' in top right corner to save changes" = "Press 'Save Schedule' in top right corner to save changes";
+"Start blocking" = "Start blocking";
+"Now you can press Play button on schedule card to start blocking" = "Now you can press Play button on schedule card to start blocking";
+"Important information" = "Important information";
+"To enable blocking you need to provide Screen Time permission in app settings" = "To enable blocking you need to provide Screen Time permission in app settings";
+"Blocking works only on real device, not on simulator" = "Blocking works only on real device, not on simulator";
+"You can change app list anytime by editing schedule" = "You can change app list anytime by editing schedule";
+"Create new schedule" = "Create new schedule";
+"Done" = "Done";
+"Instruction" = "Instruction";
+
+// MARK: - Alerts and Errors
+"Attention" = "Attention";
+"You need to select apps for blocking. Go to schedule editor and select apps." = "You need to select apps for blocking. Go to schedule editor and select apps.";
+"Failed to start blocking. Check that apps are selected and authorization is provided." = "Failed to start blocking. Check that apps are selected and authorization is provided.";
+"You need to provide Screen Time permission to block apps." = "You need to provide Screen Time permission to block apps.";
+"You need to provide Screen Time permission to select apps. Go to Settings and provide permission." = "You need to provide Screen Time permission to select apps. Go to Settings and provide permission.";
+"Start time must be earlier than end time." = "Start time must be earlier than end time.";
+"Schedule name cannot be empty." = "Schedule name cannot be empty.";
+"Repeating schedule must have at least one selected day." = "Repeating schedule must have at least one selected day.";
+"Failed to save schedule. Schedule with this name may already exist." = "Failed to save schedule. Schedule with this name may already exist.";
+
+// MARK: - Grayscale Mode
+"Grayscale Mode Info" = "Grayscale Mode Info";
+"Grayscale mode makes your screen black and white, reducing visual appeal of apps." = "Grayscale mode makes your screen black and white, reducing visual appeal of apps.";
+"To enable system-wide grayscale filter:" = "To enable system-wide grayscale filter:";
+"1. Go to Settings > Accessibility > Display & Text Size" = "1. Go to Settings > Accessibility > Display & Text Size";
+"2. Tap Color Filters" = "2. Tap Color Filters";
+"3. Enable Color Filters and select Grayscale" = "3. Enable Color Filters and select Grayscale";
+"Note: This will apply to your entire device, not just blocked apps." = "Note: This will apply to your entire device, not just blocked apps.";
+"Open Settings" = "Open Settings";
+"System filter is available" = "System filter is available";
+"System filter is not available" = "System filter is not available";
+"times" = "times";
+"No app usage data available" = "No app usage data available";
+"Day" = "Day";
+"How to enable system filter" = "How to enable system filter";
+"Active" = "Active";
+"No Apps Blocking" = "No Apps Blocking";
+"Please create a new blocking session to start blocking apps" = "Please create a new blocking session to start blocking apps";
+"Start Blocking Apps" = "Start Blocking Apps";
+"BLOCKING APPS" = "BLOCKING APPS";
+"Pause Block" = "Pause Block";
+"Schedule Session" = "Schedule Session";
+"Blocking" = "Blocking";
+"remaining" = "remaining";
+"SWIPE TO STOP OR DELETE" = "SWIPE TO STOP OR DELETE";
+"Start Block" = "Start Block";
+"Blocking Apps" = "Blocking Apps";
+
+// MARK: - Onboarding
+"Enable Screen Time" = "Enable Screen Time";
+"To block apps, we need permission to access Screen Time settings" = "To block apps, we need permission to access Screen Time settings";
+"Allow Screen Time" = "Allow Screen Time";
+"Block Distracting Apps" = "Block Distracting Apps";
+"Choose which apps to block and when. Take control of your digital habits" = "Choose which apps to block and when. Take control of your digital habits";
+"Rate Our App" = "Rate Our App";
+"If you enjoy using Dopamine Detox, please consider rating us in the App Store" = "If you enjoy using Dopamine Detox, please consider rating us in the App Store";
+"Rate App" = "Rate App";
+"Get unlimited blocks, advanced analytics, and priority support" = "Get unlimited blocks, advanced analytics, and priority support";
+"Maybe Later" = "Maybe Later";
+
+// MARK: - Premium Screen
+"Premium" = "Premium";
+"Unlock Premium" = "Unlock Premium";
+"Get the most out of Dopamine Detox" = "Get the most out of Dopamine Detox";
+"Unlimited Blocks" = "Unlimited Blocks";
+"Create as many blocking schedules as you need" = "Create as many blocking schedules as you need";
+"Advanced Analytics" = "Advanced Analytics";
+"Detailed insights and statistics about your usage" = "Detailed insights and statistics about your usage";
+"Smart Reminders" = "Smart Reminders";
+"Never miss a blocking session with intelligent notifications" = "Never miss a blocking session with intelligent notifications";
+"Priority Support" = "Priority Support";
+"Get help faster with dedicated premium support" = "Get help faster with dedicated premium support";
+"Monthly" = "Monthly";
+"Yearly" = "Yearly";
+"/month" = "/month";
+"/year" = "/year";
+"Save 58%" = "Save 58%";
+"Subscribe Now" = "Subscribe Now";
+"Restore Purchases" = "Restore Purchases";
+"Terms of Service" = "Terms of Service";
+"Privacy Policy" = "Privacy Policy";
+"Close" = "Close";
+
+// MARK: - Notifications
+"Test Notification" = "Test Notification";
+"Block Ended" = "Block Ended";
+"The block '%@' has ended." = "The block '%@' has ended.";
+"This is a test notification to verify that push notifications are working correctly." = "This is a test notification to verify that push notifications are working correctly.";
+
+// MARK: - Report
+"Day" = "Day";
+
+// MARK: - Grayscale Mode Dialog
+"Enable Grayscale Mode?" = "Enable Grayscale Mode?";
+"Would you like to enable grayscale mode for these apps? This will make them appear in black and white, reducing their visual appeal." = "Would you like to enable grayscale mode for these apps? This will make them appear in black and white, reducing their visual appeal.";
+"Enable" = "Enable";
+"Skip" = "Skip";
+
