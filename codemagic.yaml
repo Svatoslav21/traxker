@@ -6,8 +6,8 @@ workflows:
 
     environment:
       groups:
-        - appstore_connect # Для загрузки в TestFlight/AppStore (если нужно)
-        - signing          # ВАЖНО: Добавлена группа с вашими P12 и MobileProvision
+        - appstore_connect
+        - signing
       vars:
         XCODE_PROJECT: "Project-21-12-25-1.xcodeproj"
         XCODE_SCHEME: "Project-21-12-25-1"
@@ -26,40 +26,22 @@ workflows:
         script: |
           keychain initialize
 
-      # ШАГ ИЗМЕНЕН: Вместо скачивания из Apple, берем из ваших секретов
       - name: Install Certificate and Profile from Secrets
         script: |
-          # Декодируем P12 и добавляем в кейчейн
+          # Decode P12 and add to keychain
           echo $CERTIFICATE_P12 | base64 --decode > /tmp/certificate.p12
           keychain add-certificates --certificate /tmp/certificate.p12 --certificate-password "$CERTIFICATE_PASSWORD"
 
-          # Декодируем MobileProvision
+          # Decode MobileProvision
           echo $MOBILEPROVISION | base64 --decode > /tmp/profile.mobileprovision
           
-          # Копируем профиль в нужную папку
+          # Copy profile to the correct directory
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           cp /tmp/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
-
-      - name: Apply signing to Xcode project (only app targets)
-        script: |
-          # Применяем конкретный профиль из файла к таргету
-          xcode-project use-profiles \
-            --project "$XCODE_PROJECT" \
-            --target "$XCODE_SCHEME" \
-            --profile /tmp/profile.mobileprovision \
-            --export-options-plist exportOptions.plist
-
-      - name: Patch exportOptions.plist (ensure method/team/signingStyle)
-        script: |
-          /usr/libexec/PlistBuddy -c "Set :method $EXPORT_METHOD" exportOptions.plist || true
-          /usr/libexec/PlistBuddy -c "Set :signingStyle manual" exportOptions.plist || true
-          /usr/libexec/PlistBuddy -c "Set :teamID $TEAM_ID" exportOptions.plist || true
           
-          # Важно: при ручной подписи иногда нужно явно указать профиль в plist
-          # Но xcode-project use-profiles обычно справляется.
-          
-          echo "---- exportOptions.plist ----"
-          /usr/libexec/PlistBuddy -c "Print" exportOptions.plist || true
+          # Get the UUID of the profile to use it later
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' /dev/stdin <<< $(security cms -D -i /tmp/profile.mobileprovision))
+          echo "PROFILE_UUID=$PROFILE_UUID" >> $CM_ENV
 
       - name: Resolve SPM (optional)
         script: |
@@ -67,13 +49,15 @@ workflows:
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" || true
 
-      - name: Archive
+      - name: Archive (Signing applied here directly)
         script: |
           set -euo pipefail
 
           ARCHIVE_PATH="$CM_BUILD_DIR/${XCODE_SCHEME}.xcarchive"
           rm -rf "$ARCHIVE_PATH" || true
 
+          # We pass the signing details directly here to avoid modifying the project file
+          # and breaking SPM dependencies.
           xcodebuild \
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
@@ -81,11 +65,40 @@ workflows:
             -archivePath "$ARCHIVE_PATH" \
             archive \
             DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_STYLE="Manual" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
             CURRENT_PROJECT_VERSION="$BUILD_NUM" \
             COMPILER_INDEX_STORE_ENABLE=NO
 
           ls -lah "$CM_BUILD_DIR" || true
           test -d "$ARCHIVE_PATH"
+
+      - name: Create exportOptions.plist
+        script: |
+          # We create the plist manually since we skipped the xcode-project step
+          cat > exportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>$EXPORT_METHOD</string>
+              <key>teamID</key>
+              <string>$TEAM_ID</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>$BUNDLE_ID</key>
+                  <string>$PROFILE_UUID</string>
+              </dict>
+          </dict>
+          </plist>
+          EOF
+          
+          echo "---- exportOptions.plist ----"
+          cat exportOptions.plist
 
       - name: Export IPA
         script: |
