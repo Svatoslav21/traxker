@@ -2,8 +2,7 @@ workflows:
   ios_appstore_ipa:
     name: iOS App Store IPA
     max_build_duration: 90
-    instance_type: mac_mini_m1
-
+    
     environment:
       groups:
         - appstore_connect
