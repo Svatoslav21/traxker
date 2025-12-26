@@ -22,6 +22,21 @@ workflows:
           xcodebuild -version
           swift --version || true
 
+      # ✅ ДОБАВЛЕНО: гарантируем непустой BUILD_NUM для CFBundleVersion
+      - name: Set BUILD_NUM (Codemagic built-ins fallback)
+        script: |
+          set -euo pipefail
+
+          echo "CM_BUILD_NUMBER=${CM_BUILD_NUMBER:-<unset>}"
+          echo "BUILD_NUMBER=${BUILD_NUMBER:-<unset>}"
+          echo "PROJECT_BUILD_NUMBER=${PROJECT_BUILD_NUMBER:-<unset>}"
+          echo "BUILD_NUM(before)=${BUILD_NUM:-<unset>}"
+
+          BUILD_NUM_EFFECTIVE="${CM_BUILD_NUMBER:-${BUILD_NUMBER:-${PROJECT_BUILD_NUMBER:-${BUILD_NUM:-1}}}}"
+
+          echo "Using BUILD_NUM=$BUILD_NUM_EFFECTIVE"
+          echo "BUILD_NUM=$BUILD_NUM_EFFECTIVE" >> "$CM_ENV"
+
       - name: Initialize keychain
         script: |
           keychain initialize
@@ -89,7 +104,6 @@ workflows:
           ls -lah "$CM_BUILD_DIR" || true
           test -d "$ARCHIVE_PATH"
 
-      # ✅ ДОБАВЛЕНО: быстрый чек, что CFBundleVersion реально попал в архив
       - name: Verify CFBundleVersion in archive Info.plist
         script: |
           set -euo pipefail
