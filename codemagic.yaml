@@ -82,11 +82,28 @@ workflows:
             -xcconfig build.xcconfig \
             archive \
             CURRENT_PROJECT_VERSION="$BUILD_NUM" \
+            INFOPLIST_KEY_CFBundleVersion="$BUILD_NUM" \
             COMPILER_INDEX_STORE_ENABLE=NO \
             CODE_SIGN_STYLE="Manual"
 
           ls -lah "$CM_BUILD_DIR" || true
           test -d "$ARCHIVE_PATH"
+
+      # ✅ ДОБАВЛЕНО: быстрый чек, что CFBundleVersion реально попал в архив
+      - name: Verify CFBundleVersion in archive Info.plist
+        script: |
+          set -euo pipefail
+          ARCHIVE_PATH="$CM_BUILD_DIR/${XCODE_SCHEME}.xcarchive"
+          APP_PLIST="$ARCHIVE_PATH/Products/Applications/${XCODE_SCHEME}.app/Info.plist"
+
+          echo "Checking Info.plist:"
+          echo "$APP_PLIST"
+
+          echo "CFBundleShortVersionString:"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PLIST" || true
+
+          echo "CFBundleVersion (must exist):"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP_PLIST"
 
       - name: Create exportOptions.plist
         script: |
