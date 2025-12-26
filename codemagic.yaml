@@ -6,7 +6,7 @@ workflows:
 
     environment:
       groups:
-        - appstore_connect # ПРОВЕРЬТЕ, ЧТО В ЭТОЙ ГРУППЕ ЕСТЬ ВАЛИДНЫЕ КЛЮЧИ API
+        - appstore_connect # УБЕДИСЬ, ЧТО ТУТ ПРАВИЛЬНЫЕ КЛЮЧИ (PRIVATE_KEY, KEY_ID, ISSUER_ID)
         - signing
       vars:
         XCODE_PROJECT: "Project-21-12-25-1.xcodeproj"
@@ -38,23 +38,32 @@ workflows:
           PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' /dev/stdin <<< $(security cms -D -i /tmp/profile.mobileprovision))
           echo "PROFILE_UUID=$PROFILE_UUID" >> $CM_ENV
 
-      - name: Set Version in Plist (Safe Method)
+      - name: Set Version in Plist (Auto-Detect)
         script: |
-          # Ищем Info.plist. Обычно он лежит в папке с именем проекта.
-          # Мы используем PlistBuddy, чтобы жестко прописать версию. Это надежнее аргументов xcodebuild.
+          set -e
+          echo "🔍 Searching for Info.plist..."
           
-          PLIST_PATH="Project-21-12-25-1/Info.plist"
-          
-          if [ -f "$PLIST_PATH" ]; then
-              echo "Updating version in $PLIST_PATH to $BUILD_NUM"
-              /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUM" "$PLIST_PATH"
-              /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.0" "$PLIST_PATH"
-          else
-              echo "Error: Info.plist not found at $PLIST_PATH"
-              # Пытаемся найти, если путь другой
-              find . -name "Info.plist" -maxdepth 3
-              exit 1
+          # Ищем Info.plist, исключая папки Pods, git, тесты и DerivedData.
+          # Берем первый найденный файл.
+          PLIST_PATH=$(find . -name "Info.plist" -not -path "*/Pods/*" -not -path "*/.git/*" -not -path "*/DerivedData/*" -not -path "*/Tests/*" -maxdepth 5 | head -n 1)
+
+          if [ -z "$PLIST_PATH" ]; then
+            echo "❌ Error: Could not find any Info.plist file in the project!"
+            echo "Listing all files to help debug:"
+            find . -maxdepth 3
+            exit 1
           fi
+
+          echo "✅ Found Info.plist at: $PLIST_PATH"
+
+          # Устанавливаем версию
+          echo "Updating CFBundleVersion to $BUILD_NUM"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUM" "$PLIST_PATH"
+          
+          # На всякий случай ставим и ShortVersionString, если его нет
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.0" "$PLIST_PATH" || true
+          
+          echo "✅ Version updated successfully."
 
       - name: Resolve SPM (optional)
         script: |
@@ -130,7 +139,6 @@ workflows:
 
     publishing:
       app_store_connect:
-        # Убедитесь, что эти переменные корректны в Codemagic!
         api_key: $APP_STORE_CONNECT_PRIVATE_KEY      
         key_id: $APP_STORE_CONNECT_KEY_ID            
         issuer_id: $APP_STORE_CONNECT_ISSUER_ID      
