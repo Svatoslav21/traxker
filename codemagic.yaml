@@ -28,13 +28,18 @@ workflows:
 
       - name: Install Certificate and Profile from Secrets
         script: |
+          # Decode P12 and add to keychain
           echo $CERTIFICATE_P12 | base64 --decode > /tmp/certificate.p12
           keychain add-certificates --certificate /tmp/certificate.p12 --certificate-password "$CERTIFICATE_PASSWORD"
 
+          # Decode MobileProvision
           echo $MOBILEPROVISION | base64 --decode > /tmp/profile.mobileprovision
+        
+          # Copy profile to the correct directory
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           cp /tmp/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
-          
+        
+          # Get the UUID of the profile
           PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' /dev/stdin <<< $(security cms -D -i /tmp/profile.mobileprovision))
           echo "PROFILE_UUID=$PROFILE_UUID" >> $CM_ENV
 
@@ -44,24 +49,31 @@ workflows:
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" || true
 
-      - name: Archive with Smart xcconfig (No Signing)
+      - name: Archive with Smart xcconfig
         script: |
           set -euo pipefail
 
           ARCHIVE_PATH="$CM_BUILD_DIR/${XCODE_SCHEME}.xcarchive"
           rm -rf "$ARCHIVE_PATH" || true
 
-          # Отключаем подпись на этапе архивации
+          # СТРАТЕГИЯ: NO SIGNING AT ARCHIVE
+          # Мы собираем архив вообще без подписи.
+          # Подпись будет наложена ТОЛЬКО на этапе exportArchive.
+          
+          # 1. Говорим, что подпись не требуется.
           echo "CODE_SIGNING_REQUIRED = NO" > build.xcconfig
           echo "CODE_SIGNING_ALLOWED = NO" >> build.xcconfig
+          
+          # 2. Убираем любые упоминания идентичности и профилей.
           echo "CODE_SIGN_IDENTITY = " >> build.xcconfig
           echo "EXPANDED_CODE_SIGN_IDENTITY = " >> build.xcconfig
           echo "PROVISIONING_PROFILE_SPECIFIER = " >> build.xcconfig
+          
+          # 3. Важно: Устанавливаем команду разработки, чтобы Xcode не ругался на её отсутствие,
+          # но подписывать не даем.
           echo "DEVELOPMENT_TEAM = $TEAM_ID" >> build.xcconfig
 
-          # ВАЖНО: Передаем версию через аргументы.
-          # GENERATE_INFOPLIST_FILE=YES заставит Xcode создать/обновить plist с этими значениями.
-          
+          # Запускаем архив
           xcodebuild \
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
@@ -69,11 +81,12 @@ workflows:
             -archivePath "$ARCHIVE_PATH" \
             -xcconfig build.xcconfig \
             archive \
-            MARKETING_VERSION="1.0" \
             CURRENT_PROJECT_VERSION="$BUILD_NUM" \
-            GENERATE_INFOPLIST_FILE=YES \
             COMPILER_INDEX_STORE_ENABLE=NO \
             CODE_SIGN_STYLE="Manual"
+
+          ls -lah "$CM_BUILD_DIR" || true
+          test -d "$ARCHIVE_PATH"
 
       - name: Create exportOptions.plist
         script: |
@@ -96,6 +109,9 @@ workflows:
           </dict>
           </plist>
           EOF
+        
+          echo "---- exportOptions.plist ----"
+          cat exportOptions.plist
 
       - name: Export IPA
         script: |
@@ -103,6 +119,7 @@ workflows:
 
           ARCHIVE_PATH="$CM_BUILD_DIR/${XCODE_SCHEME}.xcarchive"
           EXPORT_PATH="$CM_EXPORT_DIR"
+
           mkdir -p "$EXPORT_PATH"
 
           xcodebuild -exportArchive \
@@ -110,15 +127,11 @@ workflows:
             -exportOptionsPlist exportOptions.plist \
             -exportPath "$EXPORT_PATH"
 
+          ls -lah "$EXPORT_PATH" || true
+          test -e "$EXPORT_PATH"/*.ipa
+
     artifacts:
       - $CM_EXPORT_DIR/*.ipa
       - $CM_EXPORT_DIR/*.dSYM.zip
       - $CM_BUILD_DIR/*.xcarchive
       - exportOptions.plist
-
-    publishing:
-      app_store_connect:
-        api_key: $APP_STORE_CONNECT_PRIVATE_KEY      
-        key_id: $APP_STORE_CONNECT_KEY_ID            
-        issuer_id: $APP_STORE_CONNECT_ISSUER_ID      
-        submit_to_testflight: true
