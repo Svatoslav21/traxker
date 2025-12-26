@@ -38,6 +38,14 @@ workflows:
           echo "Using BUILD_NUM=$BUILD_NUM_EFFECTIVE"
           echo "BUILD_NUM=$BUILD_NUM_EFFECTIVE" >> "$CM_ENV"
 
+      # ✅ ДОБАВЛЕНО: делаем BUILD_NUM всегда уникальным и растущим (чтобы не было duplicate в App Store)
+      - name: Make BUILD_NUM always increasing (timestamp)
+        script: |
+          set -euo pipefail
+          BUILD_NUM_EFFECTIVE="$(date +%s)"
+          echo "Using BUILD_NUM=$BUILD_NUM_EFFECTIVE"
+          echo "BUILD_NUM=$BUILD_NUM_EFFECTIVE" >> "$CM_ENV"
+
       - name: Initialize keychain
         script: |
           keychain initialize
