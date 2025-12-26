@@ -6,7 +6,7 @@ workflows:
 
     environment:
       groups:
-        - appstore_connect # УБЕДИСЬ, ЧТО ТУТ ПРАВИЛЬНЫЕ КЛЮЧИ (PRIVATE_KEY, KEY_ID, ISSUER_ID)
+        - appstore_connect
         - signing
       vars:
         XCODE_PROJECT: "Project-21-12-25-1.xcodeproj"
@@ -38,33 +38,6 @@ workflows:
           PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' /dev/stdin <<< $(security cms -D -i /tmp/profile.mobileprovision))
           echo "PROFILE_UUID=$PROFILE_UUID" >> $CM_ENV
 
-      - name: Set Version in Plist (Auto-Detect)
-        script: |
-          set -e
-          echo "🔍 Searching for Info.plist..."
-          
-          # Ищем Info.plist, исключая папки Pods, git, тесты и DerivedData.
-          # Берем первый найденный файл.
-          PLIST_PATH=$(find . -name "Info.plist" -not -path "*/Pods/*" -not -path "*/.git/*" -not -path "*/DerivedData/*" -not -path "*/Tests/*" -maxdepth 5 | head -n 1)
-
-          if [ -z "$PLIST_PATH" ]; then
-            echo "❌ Error: Could not find any Info.plist file in the project!"
-            echo "Listing all files to help debug:"
-            find . -maxdepth 3
-            exit 1
-          fi
-
-          echo "✅ Found Info.plist at: $PLIST_PATH"
-
-          # Устанавливаем версию
-          echo "Updating CFBundleVersion to $BUILD_NUM"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUM" "$PLIST_PATH"
-          
-          # На всякий случай ставим и ShortVersionString, если его нет
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.0" "$PLIST_PATH" || true
-          
-          echo "✅ Version updated successfully."
-
       - name: Resolve SPM (optional)
         script: |
           xcodebuild -resolvePackageDependencies \
@@ -86,6 +59,9 @@ workflows:
           echo "PROVISIONING_PROFILE_SPECIFIER = " >> build.xcconfig
           echo "DEVELOPMENT_TEAM = $TEAM_ID" >> build.xcconfig
 
+          # ВАЖНО: Передаем версию через аргументы.
+          # GENERATE_INFOPLIST_FILE=YES заставит Xcode создать/обновить plist с этими значениями.
+          
           xcodebuild \
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
@@ -93,6 +69,9 @@ workflows:
             -archivePath "$ARCHIVE_PATH" \
             -xcconfig build.xcconfig \
             archive \
+            MARKETING_VERSION="1.0" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUM" \
+            GENERATE_INFOPLIST_FILE=YES \
             COMPILER_INDEX_STORE_ENABLE=NO \
             CODE_SIGN_STYLE="Manual"
 
