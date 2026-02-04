@@ -3,137 +3,214 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cosmora Voyager - Support</title>
+    <title>Cherta - App Support & Privacy</title>
     <style>
+        :root {
+            --bg-color: #0f1115;
+            --card-bg: #1a1d24;
+            --text-main: #ffffff;
+            --text-muted: #a0a0a0;
+            --accent-gradient: linear-gradient(135deg, #9b5de5 0%, #00bbf9 100%);
+            --accent-color: #00bbf9;
+        }
+
         body {
-            font-family: 'Arial', sans-serif;
-            background-color: #0A0A23;
-            color: white;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            line-height: 1.6;
             margin: 0;
             padding: 0;
         }
-        header {
-            background-color: #1b8cec;
-            text-align: center;
-            padding: 20px;
-            color: white;
-        }
-        header h1 {
-            font-size: 36px;
-            margin: 0;
-        }
+
         .container {
+            max-width: 800px;
+            margin: 0 auto;
             padding: 20px;
         }
-        .container h2 {
-            font-size: 28px;
-            color: #ffcc00;
+
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 40px 0;
+            border-bottom: 1px solid #333;
+            margin-bottom: 40px;
         }
-        .content {
-            background-color: #1c1c3c;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
+
+        .logo {
+            font-size: 24px;
+            font-weight: 800;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
         }
-        .content p {
-            font-size: 18px;
-            line-height: 1.6;
-        }
-        .contact {
-            background-color: #1c1c3c;
-            padding: 20px;
-            border-radius: 8px;
-        }
-        .contact a {
-            color: #ffcc00;
+
+        nav a {
+            color: var(--text-muted);
             text-decoration: none;
-        }
-        footer {
-            background-color: #1b8cec;
-            text-align: center;
-            padding: 10px;
-            color: white;
+            margin-left: 20px;
             font-size: 14px;
+            transition: color 0.3s;
         }
-        .footer-links {
+
+        nav a:hover {
+            color: var(--text-main);
+        }
+
+        /* Content Sections */
+        section {
+            margin-bottom: 60px;
+        }
+
+        h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        h2 {
+            font-size: 22px;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            color: var(--text-main);
+            border-left: 3px solid var(--accent-color);
+            padding-left: 15px;
+        }
+
+        p, li {
+            color: var(--text-muted);
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+
+        ul {
+            padding-left: 20px;
+        }
+
+        /* Support Box */
+        .support-box {
+            background-color: var(--card-bg);
+            padding: 30px;
+            border-radius: 16px;
             text-align: center;
+            margin-top: 20px;
+            border: 1px solid #333;
         }
-        .footer-links a {
-            color: #ffcc00;
-            margin: 0 10px;
+
+        .email-link {
+            display: inline-block;
+            margin-top: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            color: var(--accent-color);
             text-decoration: none;
+            border-bottom: 1px dashed var(--accent-color);
+            padding-bottom: 2px;
+        }
+
+        .email-link:hover {
+            opacity: 0.8;
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 40px 0;
+            color: #555;
+            font-size: 12px;
+            border-top: 1px solid #333;
+            margin-top: 60px;
+        }
+
+        @media (max-width: 600px) {
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 15px;
+            }
+            nav a {
+                margin-left: 0;
+                margin-right: 20px;
+            }
         }
     </style>
 </head>
 <body>
 
-<header>
-    <h1>Cosmora Voyager Support</h1>
-</header>
+    <div class="container">
+        <header>
+            <div class="logo">Cherta</div>
+            <nav>
+                <a href="#privacy">Privacy Policy</a>
+                <a href="#support">Support</a>
+            </nav>
+        </header>
 
-<div class="container">
-    <section class="content">
-        <h2>About Cosmora Voyager</h2>
-        <p>Cosmora Voyager is your gateway to explore the wonders of the solar system! Discover planets, moons, and stars in stunning detail with engaging visuals and informative data. With over 290+ moons and 8 planets, you'll embark on an interactive journey through space, all from the comfort of your device.</p>
-    </section>
+        <!-- Support Section -->
+        <section id="support">
+            <h1>App Support</h1>
+            <p>Welcome to the official support page for <strong>Cherta</strong>. We are dedicated to helping you maintain your financial boundaries. If you are experiencing issues, have a feature request, or just want to share your feedback, please reach out.</p>
 
-    <section class="content">
-        <h2>Developer Information</h2>
-        <p>Cosmora Voyager is developed by <strong>Y3N6A2TAC5</strong>, a passionate developer focused on creating engaging and educational space exploration apps.</p>
-    </section>
+            <div class="support-box">
+                <h3>Contact the Developer</h3>
+                <p>For all inquiries, please email us directly:</p>
+                <a href="mailto:box@acquisitionholdings.info" class="email-link">box@acquisitionholdings.info</a>
+                <p style="font-size: 13px; margin-top: 15px;">We aim to respond to all inquiries within 24-48 hours.</p>
+            </div>
 
-    <section class="contact">
-        <h2>Need Help? Contact Us!</h2>
-        <p>If you need assistance or have any questions regarding Cosmora Voyager, feel free to contact us via email:</p>
-        <p>Email: <a href="mailto:chogovam@outlook.com">chogovam@outlook.com</a></p>
-    </section>
+            <h2>Frequently Asked Questions</h2>
+            <p><strong>Q: Is my financial data shared with banks?</strong><br>
+            A: No. Cherta is a behavioral tracker, not a banking app. We do not connect to your bank accounts. All data is input by you.</p>
 
-    <section class="content">
-        <h2>Privacy Policy</h2>
-        <p>At Cosmora Voyager, we are committed to protecting your privacy. This Privacy Policy explains how we collect, use, and protect your personal information when you use our app.</p>
+            <p><strong>Q: How do I delete my data?</strong><br>
+            A: You can reset your progress or delete your account data directly within the app settings.</p>
+        </section>
 
-        <h3>Information Collection</h3>
-        <p>We may collect personal data such as your name, email address, and device information when you contact us for support or use certain features of the app.</p>
+        <hr style="border: 0; border-top: 1px solid #333; margin: 40px 0;">
 
-        <h3>Use of Information</h3>
-        <p>We use the information we collect to provide you with a better experience, improve the app, and communicate with you regarding updates and support requests. We do not share your personal data with third parties without your consent, except as required by law.</p>
+        <!-- Privacy Policy Section -->
+        <section id="privacy">
+            <h1>Privacy Policy</h1>
+            <p><em>Last updated: February 3, 2026</em></p>
+            
+            <p>This Privacy Policy describes how Tommy Bailey ("we", "us", or "our") collects, uses, and discloses your information when you use the Cherta mobile application (the "Service").</p>
 
-        <h3>Data Security</h3>
-        <p>We take the security of your data seriously and use industry-standard encryption methods to protect it. However, please note that no method of transmission over the internet or method of electronic storage is 100% secure, and we cannot guarantee absolute security.</p>
+            <h2>1. Information Collection</h2>
+            <p>We prioritize your privacy. Cherta is designed to be a personal tool.</p>
+            <ul>
+                <li><strong>Usage Data:</strong> We may collect anonymous usage data to understand how the app is used and to improve stability (e.g., crash logs).</li>
+                <li><strong>User Input:</strong> The financial rules and tracking data you enter are stored locally on your device or via your personal iCloud account (if enabled). We do not have access to your personal financial entries.</li>
+            </ul>
 
-        <h3>Your Rights</h3>
-        <p>You have the right to access, update, or delete your personal information. If you wish to do so, please contact us via the email provided above.</p>
+            <h2>2. How We Use Your Information</h2>
+            <p>We use the collected data for the following purposes:</p>
+            <ul>
+                <li>To provide and maintain the Service.</li>
+                <li>To detect, prevent, and address technical issues.</li>
+                <li>To improve user experience based on anonymous feedback.</li>
+            </ul>
 
-        <h3>Changes to This Privacy Policy</h3>
-        <p>We reserve the right to update or modify this Privacy Policy at any time. Any changes will be reflected on this page, and the revised version will include the date of the last update.</p>
-    </section>
+            <h2>3. Data Security</h2>
+            <p>The security of your data is important to us. Since most data is stored locally on your device, your information is as secure as your device itself. We do not sell, trade, or rent your personal identification information to others.</p>
 
-    <section class="content">
-        <h2>Terms of Service</h2>
-        <p>By using the Cosmora Voyager app, you agree to the following terms and conditions:</p>
+            <h2>4. Third-Party Services</h2>
+            <p>The app may use third-party services (such as Apple's App Store services) that may collect information used to identify you. Please refer to Apple's privacy policy for more details.</p>
 
-        <h3>License to Use</h3>
-        <p>We grant you a non-exclusive, non-transferable, revocable license to use the app for personal, non-commercial purposes. You may not reverse-engineer, decompile, or otherwise attempt to derive the source code of the app.</p>
+            <h2>5. Changes to This Privacy Policy</h2>
+            <p>We may update our Privacy Policy from time to time. You are advised to review this page periodically for any changes. These changes are effective immediately after they are posted on this page.</p>
 
-        <h3>User Responsibilities</h3>
-        <p>You are responsible for your use of the app and agree to comply with all applicable laws and regulations. You will not engage in any activity that may harm the app or its users.</p>
+            <h2>6. Contact Us</h2>
+            <p>If you have any questions about this Privacy Policy, please contact us at:</p>
+            <p><strong>Email:</strong> box@acquisitionholdings.info</p>
+        </section>
 
-        <h3>Limitation of Liability</h3>
-        <p>We are not responsible for any damages, losses, or liabilities arising from your use of the app, including data loss, security breaches, or any other indirect, incidental, or consequential damages.</p>
-
-        <h3>Termination</h3>
-        <p>We reserve the right to terminate or suspend your access to the app at any time without notice for violation of these terms of service or any other reason at our discretion.</p>
-    </section>
-</div>
-
-<footer>
-    <div class="footer-links">
-        <a href="#">Privacy Policy</a> | 
-        <a href="#">Terms of Service</a> | 
-        <a href="#">Support</a>
+        <footer>
+            &copy; 2026 Tommy Bailey. All rights reserved.<br>
+            Cherta - Financial Boundaries & Discipline.
+        </footer>
     </div>
-    <p>&copy; 2026 Y3N6A2TAC5. All Rights Reserved.</p>
-</footer>
 
 </body>
 </html>
